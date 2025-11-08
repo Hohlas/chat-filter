@@ -209,3 +209,6 @@ __marimo__/
 # private keys
 private.txt
 *.session
+
+# analysis results
+analysis_*.json
