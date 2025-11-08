@@ -26,9 +26,10 @@ Perplexity API:
 
 Шаг 2: Установка зависимостей
 
-
+```bash
 pip install telethon
 pip install openai
 pip install python-dotenv
+```
 
-Файл private.txt
+Файл private.txt - для безопасного хранения ключей
