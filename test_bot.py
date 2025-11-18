@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
 # Загрузка переменных окружения
-load_dotenv()
+load_dotenv('private.txt')
 
 # Конфигурация Telegram
 API_ID = int(os.getenv('TELEGRAM_API_ID'))
