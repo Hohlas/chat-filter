@@ -103,34 +103,42 @@ async def handle_test_command(event):
             try:
                 limit = int(parts[1])
             except ValueError:
-                await event.reply("❌ Неверный формат. Используйте: /test или /test 5")
+                await event.delete()
+                await telegram_client.send_message('me', "❌ Неверный формат. Используйте: /test или /test 5")
                 return
         
-        # Информируем о начале
-        await event.reply(f"🔄 ТЕСТ: Загружаю {limit} последних сообщений из этого чата...")
+        # Получаем название чата для информации
+        chat = await event.get_chat()
+        chat_name = chat.title if hasattr(chat, 'title') else "этого чата"
+        
+        # Информируем о начале (удаляем своё сообщение с командой для чистоты)
+        await event.delete()
+        
+        # Отправляем уведомление в Избранное
+        await telegram_client.send_message('me', f"🔄 ТЕСТ: Загружаю {limit} последних сообщений из чата '{chat_name}'...")
         
         # Собираем сообщения
         messages_data = await collect_messages_test(event.chat_id, limit=limit)
         
         if not messages_data:
-            await event.reply("❌ Не найдено текстовых сообщений в этом чате")
+            await telegram_client.send_message('me', f"❌ Не найдено текстовых сообщений в чате '{chat_name}'")
             return
         
-        # Форматируем и отправляем результат
-        display_text = format_messages_display(messages_data)
+        # Форматируем и отправляем результат В ИЗБРАННОЕ
+        display_text = f"📍 Чат: **{chat_name}**\n\n" + format_messages_display(messages_data)
         
-        # Отправляем (разбиваем на части если нужно)
+        # Отправляем в Избранное (разбиваем на части если нужно)
         max_length = 4096  # Ограничение Telegram
         if len(display_text) > max_length:
             # Отправляем первую часть
-            await event.reply(display_text[:max_length])
+            await telegram_client.send_message('me', display_text[:max_length])
             # Отправляем остаток
             remaining = display_text[max_length:]
             while remaining:
-                await event.reply(remaining[:max_length])
+                await telegram_client.send_message('me', remaining[:max_length])
                 remaining = remaining[max_length:]
         else:
-            await event.reply(display_text)
+            await telegram_client.send_message('me', display_text)
         
         print("✅ Тест успешно завершён")
         
@@ -140,7 +148,7 @@ async def handle_test_command(event):
     except Exception as e:
         error_msg = f"❌ Ошибка при выполнении команды: {e}"
         print(error_msg)
-        await event.reply(error_msg)
+        await telegram_client.send_message('me', error_msg)
 
 
 @telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/help'))
@@ -163,11 +171,17 @@ async def handle_help_command(event):
 ✅ Получение информации об отправителях
 ✅ Форматирование дат и текста
 
+**🔒 Приватность:**
+Результаты отправляются в ваше "Избранное".
+Ваше сообщение с командой автоматически удаляется.
+Никто в чате не увидит ни команду, ни результаты!
+
 **Примечание:** 
 Это тестовая версия БЕЗ Perplexity API.
 Просто проверяем загрузку сообщений.
 """
-    await event.reply(help_text)
+    await event.delete()
+    await telegram_client.send_message('me', help_text)
 
 
 async def main():

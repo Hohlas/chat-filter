@@ -178,14 +178,21 @@ async def handle_analyze_command(event):
             elif 'd' in part:
                 days = int(part.replace('d', ''))
         
-        # Информируем о начале анализа
-        await event.reply(f"🔄 Начинаю анализ чата за последние {days} дней и {hours} часов...")
+        # Получаем название чата для информации
+        chat = await event.get_chat()
+        chat_name = chat.title if hasattr(chat, 'title') else "чата"
+        
+        # Удаляем команду из чата (для приватности)
+        await event.delete()
+        
+        # Информируем о начале анализа В ИЗБРАННОМ
+        await telegram_client.send_message('me', f"🔄 Начинаю анализ чата '{chat_name}' за последние {days} дней и {hours} часов...")
         
         # Собираем сообщения
         messages_data = await collect_messages(event.chat_id, hours=hours, days=days)
         
         if not messages_data:
-            await event.reply("❌ За указанный период не найдено сообщений")
+            await telegram_client.send_message('me', f"❌ За указанный период не найдено сообщений в чате '{chat_name}'")
             return
         
         # Создаем выжимку
@@ -194,8 +201,9 @@ async def handle_analyze_command(event):
         # Сохраняем результаты
         save_analysis(messages_data, summary)
         
-        # Отправляем выжимку пользователю
-        response = f"📊 **Выжимка чата**\n\n"
+        # Отправляем выжимку пользователю В ИЗБРАННОЕ
+        response = f"📍 Чат: **{chat_name}**\n\n"
+        response += f"📊 **Выжимка чата**\n\n"
         response += f"Период: последние {days} дней и {hours} часов\n"
         response += f"Сообщений проанализировано: {len(messages_data)}\n\n"
         response += f"**Результат анализа:**\n\n{summary}"
@@ -204,21 +212,21 @@ async def handle_analyze_command(event):
         max_length = 4096  # Ограничение Telegram
         if len(response) > max_length:
             # Отправляем первую часть
-            await event.reply(response[:max_length])
+            await telegram_client.send_message('me', response[:max_length])
             # Отправляем остаток
             remaining = response[max_length:]
             while remaining:
-                await event.reply(remaining[:max_length])
+                await telegram_client.send_message('me', remaining[:max_length])
                 remaining = remaining[max_length:]
         else:
-            await event.reply(response)
+            await telegram_client.send_message('me', response)
         
         print("✅ Анализ успешно завершён и отправлен пользователю")
         
     except Exception as e:
         error_msg = f"❌ Ошибка при выполнении команды: {e}"
         print(error_msg)
-        await event.reply(error_msg)
+        await telegram_client.send_message('me', error_msg)
 
 
 @telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/help'))
@@ -243,11 +251,17 @@ async def handle_help_command(event):
 1. Бот собирает все сообщения из текущего чата за указанный период
 2. Отправляет их в Perplexity AI для анализа
 3. Получает структурированную выжимку
-4. Отправляет вам результат в этот чат
+4. Отправляет результат в ваше "Избранное"
+
+**🔒 Приватность:**
+• Ваша команда автоматически удаляется из чата
+• Результаты отправляются только в "Избранное"
+• Никто в чате не узнает, что вы делали анализ
 
 **Примечание:** Бот реагирует только на ваши собственные команды (исходящие сообщения).
 """
-    await event.reply(help_text)
+    await event.delete()
+    await telegram_client.send_message('me', help_text)
 
 
 async def main():
