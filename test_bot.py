@@ -1,5 +1,6 @@
 import os
 import asyncio
+import random
 from telethon import TelegramClient, events
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -50,31 +51,23 @@ async def get_or_create_topic(chat_name):
             return None
         
         # Ищем существующую тему с таким названием
-        topics = []
-        async for dialog in telegram_client.iter_dialogs():
-            if dialog.id == RESULTS_DESTINATION:
-                # Получаем темы форума
-                async for msg in telegram_client.iter_messages(RESULTS_DESTINATION, limit=1):
-                    # Перебираем темы
-                    from telethon.tl.functions.channels import GetForumTopicsRequest
-                    try:
-                        result = await telegram_client(GetForumTopicsRequest(
-                            channel=channel,
-                            offset_date=0,
-                            offset_id=0,
-                            offset_topic=0,
-                            limit=100
-                        ))
-                        
-                        # Ищем тему по названию
-                        for topic in result.topics:
-                            if hasattr(topic, 'title') and topic.title == chat_name:
-                                print(f"✅ Найдена существующая тема: {chat_name} (ID: {topic.id})")
-                                return topic.id
-                    except Exception as e:
-                        print(f"⚠️  Ошибка при поиске тем: {e}")
-                        break
-                    break
+        from telethon.tl.functions.channels import GetForumTopicsRequest
+        try:
+            result = await telegram_client(GetForumTopicsRequest(
+                channel=channel,
+                offset_date=0,
+                offset_id=0,
+                offset_topic=0,
+                limit=100
+            ))
+            
+            # Ищем тему по названию
+            for topic in result.topics:
+                if hasattr(topic, 'title') and topic.title == chat_name:
+                    print(f"✅ Найдена существующая тема: {chat_name} (ID: {topic.id})")
+                    return topic.id
+        except Exception as e:
+            print(f"⚠️  Ошибка при поиске тем: {e}")
         
         # Если тема не найдена - создаём новую
         from telethon.tl.functions.channels import CreateForumTopicRequest
@@ -82,7 +75,7 @@ async def get_or_create_topic(chat_name):
             result = await telegram_client(CreateForumTopicRequest(
                 channel=channel,
                 title=chat_name,
-                random_id=telegram_client._get_random_id()
+                random_id=random.randrange(-2**63, 2**63)
             ))
             
             # Получаем ID созданной темы из ответа
@@ -91,10 +84,15 @@ async def get_or_create_topic(chat_name):
             return topic_id
         except Exception as e:
             print(f"❌ Ошибка при создании темы: {e}")
+            print(f"   Детали: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
             return None
             
     except Exception as e:
         print(f"❌ Ошибка при работе с темами: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
