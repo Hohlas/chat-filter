@@ -30,64 +30,119 @@ if RESULTS_DESTINATION != 'me':
 # Конфигурация Perplexity
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 
-# Конфигурация фильтрации сообщений (для экономии токенов)
-EXCLUDED_USERS = ['AntonHoldon', 'gtslay', 'E2ard', 'vlad_calista']
-PRIORITY_USERS = ['Zinur', 'Restyle Pon', 'Lex', 'ProMint', 'Sergey']  # Для будущего использования
+# Конфигурация фильтрации сообщений
+MIN_MESSAGE_LENGTH = 3  # Минимальная длина сообщения (символов)
 NOISE_PATTERNS = [
     r'^[\+\-\*]+$',  # +, -, *, ++, --
     r'^(ок|ok|лол|lol|хаха|haha|да|yes|нет|no)$',  # Односложные ответы
     r'^[\.\!\?]+$',  # Только знаки препинания
     r'^[👍👎👌✅❌🔥💪🎉😂😅]+$',  # Только эмодзи
 ]
-MIN_MESSAGE_LENGTH = 3  # Минимальная длина сообщения (символов)
 
-# Промт для анализа сообщений (адаптирован под криптовалютную тематику)
-ANALYSIS_PROMPT = """Ты — полезный ассистент для анализа чатов Telegram по криптовалютной тематике.
+# Пути к конфигурационным файлам
+EXCLUDED_USERS_FILE = 'EXCLUDED_USERS.txt'
+PRIORITY_USERS_FILE = 'PRIORITY_USERS.txt'
+PROMPT_FILE = 'PROMPT.txt'
 
-Во вложенных данных содержится список сообщений телеграм чата. Сообщения представляют собой обсуждения на множество различных тем. Они могут быть разрознены, не последовательны и переплетены.
 
-Структурируй информацию содержащуюся в сообщениях:
+def load_users_from_file(filename):
+    """
+    Загружает список пользователей из файла
+    
+    Args:
+        filename: Путь к файлу со списком пользователей
+    
+    Returns:
+        Список имен пользователей
+    """
+    if not os.path.exists(filename):
+        print(f"⚠️  Файл {filename} не найден, используется пустой список")
+        return []
+    
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Удаляем комментарии (строки начинающиеся с #)
+        lines = [line.strip() for line in content.split('\n') 
+                 if line.strip() and not line.strip().startswith('#')]
+        
+        # Объединяем все строки и разделяем по различным разделителям
+        users = []
+        for line in lines:
+            # Поддерживаем разделители: пробел, запятая, точка с запятой, перенос строки
+            parts = re.split(r'[,;\s]+', line)
+            users.extend([p.strip() for p in parts if p.strip()])
+        
+        return users
+    except Exception as e:
+        print(f"❌ Ошибка при чтении {filename}: {e}")
+        return []
 
-1. Анализируй содержимое как основной источник. Если в обсуждении упоминается информация/термин/событие, контекст которых ТЕБЕ неясен из сообщений, используй внешние источники (только для справочной информации), чтобы лучше понять суть обсуждения. Если информация взята из внешних источников, явно помечай.
 
-2. Раздели сообщения по обсуждаемым темам, включая не только масштабные, но и локальные/микро-дискуссии (вплоть до коротких диалогов по одной проблеме). Выдели максимально возможное количество тем.
+def load_prompt_from_file(filename):
+    """
+    Загружает промпт из файла
+    
+    Args:
+        filename: Путь к файлу с промптом
+    
+    Returns:
+        Текст промпта или дефолтный промпт при ошибке
+    """
+    if not os.path.exists(filename):
+        print(f"⚠️  Файл {filename} не найден, используется дефолтный промпт")
+        return "Проанализируй сообщения и создай структурированную выжимку."
+    
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    except Exception as e:
+        print(f"❌ Ошибка при чтении {filename}: {e}")
+        return "Проанализируй сообщения и создай структурированную выжимку."
 
-3. Для каждого топика выдели основные содержательные аргументы участников с максимальным совпадением к тексту (включая цитирование). Сохраняй терминологию и ключевые фразы участников близко к оригиналу.
 
-4. Для каждой темы приведи время первого поста (ММ-ДД ЧЧ:ММ).
+def save_users_to_file(filename, users):
+    """
+    Сохраняет список пользователей в файл
+    
+    Args:
+        filename: Путь к файлу
+        users: Список пользователей
+    """
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write("# Автоматически обновлено ботом\n")
+            f.write("# Можно редактировать вручную\n\n")
+            for user in users:
+                f.write(f"{user}\n")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка при сохранении {filename}: {e}")
+        return False
 
-5. Отдельно укажи summary/итоговую тенденцию обсуждения (если она выраженная).
 
-6. При выделении авторов и терминов учитывай все возможные варианты написания или транслитерации (например ProMint/проминт/promint, Aster/астер, Uniswap/унисвап/юники JUP/юпитер, Monad/монад т.п.).
+def save_prompt_to_file(filename, prompt):
+    """
+    Сохраняет промпт в файл
+    
+    Args:
+        filename: Путь к файлу
+        prompt: Текст промпта
+    """
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(prompt)
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка при сохранении {filename}: {e}")
+        return False
 
-7. Особое внимание уделяй участникам: Zinur, Restyle Pon, Lex, ProMint, Sergey (ICO Drops) — их сообщения выводи первыми в каждой теме (если они участвовали).
 
-8. Если по некоторой теме высказался только один человек — укажи это явно.
-
-9. В итоговом выводе имя каждого участника оформляй как Markdown-ссылку вида https://t.me/c/{chat_id}/{message_id} на его первую реплику по теме; {chat_id} и {message_id} берутся из данных сообщения.
-
-Результат представь в таком виде:
-
----
-
-<Заголовок темы1>
-<summary по теме1 (при наличии)>
-<ММ-ДД ЧЧ:ММ (время первого поста по данной теме)>
-
-[Пользователь1](ссылка): мысли и аргументы пользователя1 по теме1.
-[Пользователь2](ссылка): мысли и аргументы пользователя2 по теме1.
-
----
-
-<Заголовок темы2>
-<summary по теме2 (при наличии)>
-<ММ-ДД ЧЧ:ММ (время первого поста по данной теме)>
-
-[Пользователь1](ссылка): мысли и аргументы пользователя1 по теме2.
-[Пользователь2](ссылка): мысли и аргументы пользователя2 по теме2.
-
----
-"""
+# Загружаем конфигурацию из файлов при старте
+EXCLUDED_USERS = load_users_from_file(EXCLUDED_USERS_FILE)
+PRIORITY_USERS = load_users_from_file(PRIORITY_USERS_FILE)
+ANALYSIS_PROMPT = load_prompt_from_file(PROMPT_FILE)
 
 # Инициализация клиентов
 telegram_client = TelegramClient('session_name', API_ID, API_HASH)
@@ -487,13 +542,223 @@ async def handle_analyze_command(event):
             await telegram_client.send_message(RESULTS_DESTINATION, error_msg)
 
 
+@telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/config'))
+async def handle_config_command(event):
+    """Показывает текущую конфигурацию"""
+    config_text = f"""
+⚙️ **Текущая конфигурация бота**
+
+**📝 Исключенные пользователи** ({len(EXCLUDED_USERS)}):
+{', '.join(EXCLUDED_USERS) if EXCLUDED_USERS else 'Нет'}
+
+**⭐ Приоритетные пользователи** ({len(PRIORITY_USERS)}):
+{', '.join(PRIORITY_USERS) if PRIORITY_USERS else 'Нет'}
+
+**🎯 Настройки фильтрации:**
+• Минимальная длина сообщения: {MIN_MESSAGE_LENGTH} символов
+• Паттернов шума: {len(NOISE_PATTERNS)}
+
+**📄 Файлы конфигурации:**
+• {EXCLUDED_USERS_FILE}
+• {PRIORITY_USERS_FILE}
+• {PROMPT_FILE}
+
+**Команды управления:**
+`/show_excluded` - показать исключенных пользователей
+`/show_priority` - показать приоритетных пользователей
+`/show_prompt` - показать текущий промпт (первые 500 символов)
+
+`/add_excluded username` - добавить в исключенные
+`/remove_excluded username` - убрать из исключенных
+`/add_priority username` - добавить в приоритетные
+`/remove_priority username` - убрать из приоритетных
+
+`/reload_config` - перезагрузить конфигурацию из файлов
+
+💡 Можно также редактировать файлы напрямую на сервере
+"""
+    await event.delete()
+    
+    chat = await event.get_chat()
+    chat_name = chat.title if hasattr(chat, 'title') else "Конфигурация"
+    topic_id = await get_or_create_topic(chat_name)
+    
+    await telegram_client.send_message(RESULTS_DESTINATION, config_text, reply_to=topic_id)
+
+
+@telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/show_excluded'))
+async def handle_show_excluded_command(event):
+    """Показывает список исключенных пользователей"""
+    text = f"📝 **Исключенные пользователи** ({len(EXCLUDED_USERS)}):\n\n"
+    if EXCLUDED_USERS:
+        for i, user in enumerate(EXCLUDED_USERS, 1):
+            text += f"{i}. {user}\n"
+    else:
+        text += "Список пуст"
+    
+    await event.delete()
+    chat = await event.get_chat()
+    chat_name = chat.title if hasattr(chat, 'title') else "Конфигурация"
+    topic_id = await get_or_create_topic(chat_name)
+    await telegram_client.send_message(RESULTS_DESTINATION, text, reply_to=topic_id)
+
+
+@telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/show_priority'))
+async def handle_show_priority_command(event):
+    """Показывает список приоритетных пользователей"""
+    text = f"⭐ **Приоритетные пользователи** ({len(PRIORITY_USERS)}):\n\n"
+    if PRIORITY_USERS:
+        for i, user in enumerate(PRIORITY_USERS, 1):
+            text += f"{i}. {user}\n"
+    else:
+        text += "Список пуст"
+    
+    await event.delete()
+    chat = await event.get_chat()
+    chat_name = chat.title if hasattr(chat, 'title') else "Конфигурация"
+    topic_id = await get_or_create_topic(chat_name)
+    await telegram_client.send_message(RESULTS_DESTINATION, text, reply_to=topic_id)
+
+
+@telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/show_prompt'))
+async def handle_show_prompt_command(event):
+    """Показывает текущий промпт"""
+    prompt_preview = ANALYSIS_PROMPT[:1000] + "..." if len(ANALYSIS_PROMPT) > 1000 else ANALYSIS_PROMPT
+    text = f"📄 **Текущий промпт** ({len(ANALYSIS_PROMPT)} символов):\n\n{prompt_preview}\n\n"
+    text += f"💡 Полный промпт в файле: {PROMPT_FILE}"
+    
+    await event.delete()
+    chat = await event.get_chat()
+    chat_name = chat.title if hasattr(chat, 'title') else "Конфигурация"
+    topic_id = await get_or_create_topic(chat_name)
+    await telegram_client.send_message(RESULTS_DESTINATION, text, reply_to=topic_id)
+
+
+@telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/add_excluded\s+(.+)'))
+async def handle_add_excluded_command(event):
+    """Добавляет пользователя в список исключенных"""
+    global EXCLUDED_USERS
+    username = event.pattern_match.group(1).strip()
+    
+    if username in EXCLUDED_USERS:
+        text = f"⚠️ Пользователь **{username}** уже в списке исключенных"
+    else:
+        EXCLUDED_USERS.append(username)
+        if save_users_to_file(EXCLUDED_USERS_FILE, EXCLUDED_USERS):
+            text = f"✅ Пользователь **{username}** добавлен в исключенные\n\nТекущий список ({len(EXCLUDED_USERS)}): {', '.join(EXCLUDED_USERS)}"
+        else:
+            EXCLUDED_USERS.remove(username)  # Откатываем изменение
+            text = f"❌ Ошибка при сохранении в файл"
+    
+    await event.delete()
+    chat = await event.get_chat()
+    chat_name = chat.title if hasattr(chat, 'title') else "Конфигурация"
+    topic_id = await get_or_create_topic(chat_name)
+    await telegram_client.send_message(RESULTS_DESTINATION, text, reply_to=topic_id)
+
+
+@telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/remove_excluded\s+(.+)'))
+async def handle_remove_excluded_command(event):
+    """Удаляет пользователя из списка исключенных"""
+    global EXCLUDED_USERS
+    username = event.pattern_match.group(1).strip()
+    
+    if username not in EXCLUDED_USERS:
+        text = f"⚠️ Пользователь **{username}** не найден в списке исключенных"
+    else:
+        EXCLUDED_USERS.remove(username)
+        if save_users_to_file(EXCLUDED_USERS_FILE, EXCLUDED_USERS):
+            text = f"✅ Пользователь **{username}** удален из исключенных\n\nТекущий список ({len(EXCLUDED_USERS)}): {', '.join(EXCLUDED_USERS) if EXCLUDED_USERS else 'Пуст'}"
+        else:
+            EXCLUDED_USERS.append(username)  # Откатываем изменение
+            text = f"❌ Ошибка при сохранении в файл"
+    
+    await event.delete()
+    chat = await event.get_chat()
+    chat_name = chat.title if hasattr(chat, 'title') else "Конфигурация"
+    topic_id = await get_or_create_topic(chat_name)
+    await telegram_client.send_message(RESULTS_DESTINATION, text, reply_to=topic_id)
+
+
+@telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/add_priority\s+(.+)'))
+async def handle_add_priority_command(event):
+    """Добавляет пользователя в список приоритетных"""
+    global PRIORITY_USERS
+    username = event.pattern_match.group(1).strip()
+    
+    if username in PRIORITY_USERS:
+        text = f"⚠️ Пользователь **{username}** уже в списке приоритетных"
+    else:
+        PRIORITY_USERS.append(username)
+        if save_users_to_file(PRIORITY_USERS_FILE, PRIORITY_USERS):
+            text = f"✅ Пользователь **{username}** добавлен в приоритетные\n\nТекущий список ({len(PRIORITY_USERS)}): {', '.join(PRIORITY_USERS)}"
+        else:
+            PRIORITY_USERS.remove(username)  # Откатываем изменение
+            text = f"❌ Ошибка при сохранении в файл"
+    
+    await event.delete()
+    chat = await event.get_chat()
+    chat_name = chat.title if hasattr(chat, 'title') else "Конфигурация"
+    topic_id = await get_or_create_topic(chat_name)
+    await telegram_client.send_message(RESULTS_DESTINATION, text, reply_to=topic_id)
+
+
+@telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/remove_priority\s+(.+)'))
+async def handle_remove_priority_command(event):
+    """Удаляет пользователя из списка приоритетных"""
+    global PRIORITY_USERS
+    username = event.pattern_match.group(1).strip()
+    
+    if username not in PRIORITY_USERS:
+        text = f"⚠️ Пользователь **{username}** не найден в списке приоритетных"
+    else:
+        PRIORITY_USERS.remove(username)
+        if save_users_to_file(PRIORITY_USERS_FILE, PRIORITY_USERS):
+            text = f"✅ Пользователь **{username}** удален из приоритетных\n\nТекущий список ({len(PRIORITY_USERS)}): {', '.join(PRIORITY_USERS) if PRIORITY_USERS else 'Пуст'}"
+        else:
+            PRIORITY_USERS.append(username)  # Откатываем изменение
+            text = f"❌ Ошибка при сохранении в файл"
+    
+    await event.delete()
+    chat = await event.get_chat()
+    chat_name = chat.title if hasattr(chat, 'title') else "Конфигурация"
+    topic_id = await get_or_create_topic(chat_name)
+    await telegram_client.send_message(RESULTS_DESTINATION, text, reply_to=topic_id)
+
+
+@telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/reload_config'))
+async def handle_reload_config_command(event):
+    """Перезагружает конфигурацию из файлов"""
+    global EXCLUDED_USERS, PRIORITY_USERS, ANALYSIS_PROMPT
+    
+    EXCLUDED_USERS = load_users_from_file(EXCLUDED_USERS_FILE)
+    PRIORITY_USERS = load_users_from_file(PRIORITY_USERS_FILE)
+    ANALYSIS_PROMPT = load_prompt_from_file(PROMPT_FILE)
+    
+    text = f"""
+✅ **Конфигурация перезагружена из файлов**
+
+📝 Исключенные пользователи: {len(EXCLUDED_USERS)}
+⭐ Приоритетные пользователи: {len(PRIORITY_USERS)}
+📄 Промпт: {len(ANALYSIS_PROMPT)} символов
+
+💡 Используйте `/config` для просмотра деталей
+"""
+    
+    await event.delete()
+    chat = await event.get_chat()
+    chat_name = chat.title if hasattr(chat, 'title') else "Конфигурация"
+    topic_id = await get_or_create_topic(chat_name)
+    await telegram_client.send_message(RESULTS_DESTINATION, text, reply_to=topic_id)
+
+
 @telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/help'))
 async def handle_help_command(event):
     """Обработчик команды /help - показывает справку по командам"""
     help_text = """
 📖 **Справка по командам бота**
 
-**Основные команды:**
+**📊 Основные команды:**
 
 `/analyze` - анализ чата за последние 24 часа
 
@@ -504,6 +769,20 @@ async def handle_help_command(event):
   • `/analyze 3d 6h` - за последние 3 дня и 6 часов
 
 `/help` - показать эту справку
+
+**⚙️ Управление конфигурацией:**
+
+`/config` - показать текущую конфигурацию
+`/show_excluded` - список исключенных пользователей
+`/show_priority` - список приоритетных пользователей
+`/show_prompt` - показать текущий промпт
+
+`/add_excluded username` - добавить в исключенные
+`/remove_excluded username` - убрать из исключенных
+`/add_priority username` - добавить в приоритетные
+`/remove_priority username` - убрать из приоритетных
+
+`/reload_config` - перезагрузить из файлов
 
 **Как это работает:**
 1. Бот собирает все сообщения из текущего чата за указанный период
@@ -584,9 +863,16 @@ async def main():
     print(f"   • Минимальная длина сообщения: {MIN_MESSAGE_LENGTH} символов")
     
     print("\n📌 Доступные команды:")
-    print("  /analyze - анализ чата за последние 24 часа")
-    print("  /analyze [время] - анализ за указанный период")
-    print("  /help - справка по командам")
+    print("  Анализ:")
+    print("    /analyze - анализ чата за последние 24 часа")
+    print("    /analyze [время] - анализ за указанный период")
+    print("  Конфигурация:")
+    print("    /config - показать конфигурацию")
+    print("    /add_excluded, /remove_excluded - управление исключенными")
+    print("    /add_priority, /remove_priority - управление приоритетными")
+    print("    /reload_config - перезагрузить из файлов")
+    print("  Справка:")
+    print("    /help - полная справка по командам")
     print("\n💡 Отправьте команду /analyze в любом чате для начала анализа")
     print("=" * 60)
     print("\n👀 Ожидание команд...")
