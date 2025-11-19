@@ -7,6 +7,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import json
 from datetime import datetime, timedelta
+import httpx
 
 # Загрузка переменных окружения
 load_dotenv('private.txt')
@@ -220,12 +221,16 @@ CURRENT_MODEL, USE_REASONING = load_model_config(MODEL_CONFIG_FILE)
 # Инициализация клиентов
 telegram_client = TelegramClient('session_name', API_ID, API_HASH)
 
+# Создаем httpx клиент с правильной кодировкой для Unicode
+http_client = httpx.Client(
+    timeout=60.0,
+    limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+)
+
 perplexity_client = OpenAI(
     api_key=PERPLEXITY_API_KEY,
     base_url='https://api.perplexity.ai',
-    default_headers={
-        'Content-Type': 'application/json; charset=utf-8'
-    }
+    http_client=http_client
 )
 
 
@@ -470,17 +475,26 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
     
     # Формируем JSON для отправки (более структурированный формат)
     # Санитизируем данные: убеждаемся что все строки в Unicode
+    def safe_str(value):
+        """Безопасное преобразование в строку с обработкой кириллицы"""
+        if value is None:
+            return ''
+        if isinstance(value, bytes):
+            return value.decode('utf-8', errors='ignore')
+        return str(value)
+    
     sanitized_messages = []
     for msg in messages_data:
         sanitized_msg = {
-            'sender': str(msg['sender']) if msg['sender'] else 'Unknown',
-            'text': str(msg['text']) if msg['text'] else '',
-            'date': str(msg['date']),
-            'message_id': msg['message_id'],
-            'chat_id': str(msg['chat_id'])
+            'sender': safe_str(msg.get('sender', 'Unknown')),
+            'text': safe_str(msg.get('text', '')),
+            'date': safe_str(msg.get('date', '')),
+            'message_id': int(msg.get('message_id', 0)),
+            'chat_id': safe_str(msg.get('chat_id', ''))
         }
         sanitized_messages.append(sanitized_msg)
     
+    # Используем ensure_ascii=False для сохранения кириллицы
     messages_json = json.dumps(sanitized_messages, ensure_ascii=False, indent=2)
     
     # Проверяем размер и при необходимости разбиваем на части
@@ -502,15 +516,15 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
         # Берем ПОСЛЕДНИЕ сообщения (самые актуальные), а не первые!
         messages_data_limited = messages_data[-limit:]  # Изменено на последние!
         
-        # Санитизируем ограниченные данные
+        # Санитизируем ограниченные данные используя ту же функцию
         sanitized_messages = []
         for msg in messages_data_limited:
             sanitized_msg = {
-                'sender': str(msg['sender']) if msg['sender'] else 'Unknown',
-                'text': str(msg['text']) if msg['text'] else '',
-                'date': str(msg['date']),
-                'message_id': msg['message_id'],
-                'chat_id': str(msg['chat_id'])
+                'sender': safe_str(msg.get('sender', 'Unknown')),
+                'text': safe_str(msg.get('text', '')),
+                'date': safe_str(msg.get('date', '')),
+                'message_id': int(msg.get('message_id', 0)),
+                'chat_id': safe_str(msg.get('chat_id', ''))
             }
             sanitized_messages.append(sanitized_msg)
         
@@ -518,9 +532,19 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
     
     try:
         # Формируем параметры запроса
-        # Важно: убеждаемся что все строки в Unicode
-        system_content = str(ANALYSIS_PROMPT)
-        user_content = f'Данные сообщений для анализа (JSON):\n\n{messages_json}'
+        # Важно: убеждаемся что все строки в Unicode и правильно закодированы
+        system_content = safe_str(ANALYSIS_PROMPT)
+        user_content = safe_str(f'Данные сообщений для анализа (JSON):\n\n{messages_json}')
+        
+        # Проверяем что контент корректный Unicode
+        try:
+            system_content.encode('utf-8')
+            user_content.encode('utf-8')
+        except UnicodeEncodeError as ue:
+            print(f"⚠️  Ошибка кодировки в контенте: {ue}")
+            # Принудительно очищаем от проблемных символов
+            system_content = system_content.encode('utf-8', errors='ignore').decode('utf-8')
+            user_content = user_content.encode('utf-8', errors='ignore').decode('utf-8')
         
         request_params = {
             'model': model,
