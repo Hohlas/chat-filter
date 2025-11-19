@@ -208,6 +208,7 @@ __marimo__/
 
 *.session
 private.txt
+*.code-workspace
 
 # analysis results
 analysis_*.json

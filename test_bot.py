@@ -26,6 +26,78 @@ if RESULTS_DESTINATION != 'me':
 telegram_client = TelegramClient('session_name', API_ID, API_HASH)
 
 
+async def get_or_create_topic(chat_name):
+    """
+    Находит или создает тему в канале по названию чата
+    
+    Args:
+        chat_name: Название чата-источника
+    
+    Returns:
+        ID темы (topic_id) или None если канал не поддерживает темы
+    """
+    if RESULTS_DESTINATION == 'me':
+        # Избранное не поддерживает темы
+        return None
+    
+    try:
+        # Получаем информацию о канале
+        channel = await telegram_client.get_entity(RESULTS_DESTINATION)
+        
+        # Проверяем, является ли канал форумом
+        if not hasattr(channel, 'forum') or not channel.forum:
+            print(f"⚠️  Канал не является форумом. Темы не поддерживаются.")
+            return None
+        
+        # Ищем существующую тему с таким названием
+        topics = []
+        async for dialog in telegram_client.iter_dialogs():
+            if dialog.id == RESULTS_DESTINATION:
+                # Получаем темы форума
+                async for msg in telegram_client.iter_messages(RESULTS_DESTINATION, limit=1):
+                    # Перебираем темы
+                    from telethon.tl.functions.channels import GetForumTopicsRequest
+                    try:
+                        result = await telegram_client(GetForumTopicsRequest(
+                            channel=channel,
+                            offset_date=0,
+                            offset_id=0,
+                            offset_topic=0,
+                            limit=100
+                        ))
+                        
+                        # Ищем тему по названию
+                        for topic in result.topics:
+                            if hasattr(topic, 'title') and topic.title == chat_name:
+                                print(f"✅ Найдена существующая тема: {chat_name} (ID: {topic.id})")
+                                return topic.id
+                    except Exception as e:
+                        print(f"⚠️  Ошибка при поиске тем: {e}")
+                        break
+                    break
+        
+        # Если тема не найдена - создаём новую
+        from telethon.tl.functions.channels import CreateForumTopicRequest
+        try:
+            result = await telegram_client(CreateForumTopicRequest(
+                channel=channel,
+                title=chat_name,
+                random_id=telegram_client._get_random_id()
+            ))
+            
+            # Получаем ID созданной темы из ответа
+            topic_id = result.updates[0].id if hasattr(result, 'updates') and result.updates else None
+            print(f"✅ Создана новая тема: {chat_name} (ID: {topic_id})")
+            return topic_id
+        except Exception as e:
+            print(f"❌ Ошибка при создании темы: {e}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Ошибка при работе с темами: {e}")
+        return None
+
+
 async def collect_messages_test(chat_id, limit=2):
     """
     ТЕСТОВАЯ функция: собирает только N последних сообщений
@@ -124,31 +196,54 @@ async def handle_test_command(event):
         # Информируем о начале (удаляем своё сообщение с командой для чистоты)
         await event.delete()
         
-        # Отправляем уведомление в канал/Избранное
-        await telegram_client.send_message(RESULTS_DESTINATION, f"🔄 ТЕСТ: Загружаю {limit} последних сообщений из чата '{chat_name}'...")
+        # Получаем или создаем тему для этого чата
+        topic_id = await get_or_create_topic(chat_name)
+        
+        # Отправляем уведомление в канал/Избранное/Тему
+        await telegram_client.send_message(
+            RESULTS_DESTINATION, 
+            f"🔄 ТЕСТ: Загружаю {limit} последних сообщений из чата '{chat_name}'...",
+            reply_to=topic_id
+        )
         
         # Собираем сообщения
         messages_data = await collect_messages_test(event.chat_id, limit=limit)
         
         if not messages_data:
-            await telegram_client.send_message(RESULTS_DESTINATION, f"❌ Не найдено текстовых сообщений в чате '{chat_name}'")
+            await telegram_client.send_message(
+                RESULTS_DESTINATION, 
+                f"❌ Не найдено текстовых сообщений в чате '{chat_name}'",
+                reply_to=topic_id
+            )
             return
         
-        # Форматируем и отправляем результат в канал/Избранное
+        # Форматируем и отправляем результат в канал/Избранное/Тему
         display_text = f"📍 Чат: **{chat_name}**\n\n" + format_messages_display(messages_data)
         
-        # Отправляем в канал/Избранное (разбиваем на части если нужно)
+        # Отправляем в канал/Избранное/Тему (разбиваем на части если нужно)
         max_length = 4096  # Ограничение Telegram
         if len(display_text) > max_length:
             # Отправляем первую часть
-            await telegram_client.send_message(RESULTS_DESTINATION, display_text[:max_length])
+            await telegram_client.send_message(
+                RESULTS_DESTINATION, 
+                display_text[:max_length],
+                reply_to=topic_id
+            )
             # Отправляем остаток
             remaining = display_text[max_length:]
             while remaining:
-                await telegram_client.send_message(RESULTS_DESTINATION, remaining[:max_length])
+                await telegram_client.send_message(
+                    RESULTS_DESTINATION, 
+                    remaining[:max_length],
+                    reply_to=topic_id
+                )
                 remaining = remaining[max_length:]
         else:
-            await telegram_client.send_message(RESULTS_DESTINATION, display_text)
+            await telegram_client.send_message(
+                RESULTS_DESTINATION, 
+                display_text,
+                reply_to=topic_id
+            )
         
         print("✅ Тест успешно завершён")
         
@@ -180,18 +275,29 @@ async def handle_help_command(event):
 ✅ Чтение сообщений из чата
 ✅ Получение информации об отправителях
 ✅ Форматирование дат и текста
+✅ Автоматическое создание тем по названию чата
 
 **🔒 Приватность:**
 Результаты отправляются в ваш приватный канал/Избранное.
 Ваше сообщение с командой автоматически удаляется.
 Никто в чате не увидит ни команду, ни результаты!
 
+**📁 Организация:**
+Для каждого чата автоматически создается отдельная тема.
+Все сообщения группируются по источнику!
+
 **Примечание:** 
 Это тестовая версия БЕЗ Perplexity API.
 Просто проверяем загрузку сообщений.
 """
     await event.delete()
-    await telegram_client.send_message(RESULTS_DESTINATION, help_text)
+    
+    # Получаем название чата для создания/использования темы
+    chat = await event.get_chat()
+    chat_name = chat.title if hasattr(chat, 'title') else "Справка"
+    topic_id = await get_or_create_topic(chat_name)
+    
+    await telegram_client.send_message(RESULTS_DESTINATION, help_text, reply_to=topic_id)
 
 
 async def main():
@@ -214,6 +320,14 @@ async def main():
             channel = await telegram_client.get_entity(RESULTS_DESTINATION)
             channel_name = channel.title if hasattr(channel, 'title') else "Канал"
             print(f"   ✅ Канал найден: {channel_name}")
+            
+            # Проверяем, является ли канал форумом
+            if hasattr(channel, 'forum') and channel.forum:
+                print(f"   📁 Форум включен: темы будут создаваться автоматически")
+            else:
+                print(f"   ℹ️  Форум не включен: все сообщения в общий чат")
+                print(f"   💡 Чтобы включить темы, зайдите в настройки канала:")
+                print(f"      Управление каналом → Темы → Включить")
         except Exception as e:
             print(f"   ⚠️  Не могу получить доступ к каналу: {e}")
             print(f"   💡 Убедитесь что вы являетесь владельцем/админом канала")
