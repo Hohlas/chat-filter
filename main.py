@@ -222,7 +222,10 @@ telegram_client = TelegramClient('session_name', API_ID, API_HASH)
 
 perplexity_client = OpenAI(
     api_key=PERPLEXITY_API_KEY,
-    base_url='https://api.perplexity.ai'
+    base_url='https://api.perplexity.ai',
+    default_headers={
+        'Content-Type': 'application/json; charset=utf-8'
+    }
 )
 
 
@@ -466,16 +469,19 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
         max_chars = 200000  # Консервативный лимит для других моделей
     
     # Формируем JSON для отправки (более структурированный формат)
-    messages_json = json.dumps([
-        {
-            'sender': msg['sender'],
-            'text': msg['text'],
-            'date': msg['date'],
+    # Санитизируем данные: убеждаемся что все строки в Unicode
+    sanitized_messages = []
+    for msg in messages_data:
+        sanitized_msg = {
+            'sender': str(msg['sender']) if msg['sender'] else 'Unknown',
+            'text': str(msg['text']) if msg['text'] else '',
+            'date': str(msg['date']),
             'message_id': msg['message_id'],
-            'chat_id': msg['chat_id']
+            'chat_id': str(msg['chat_id'])
         }
-        for msg in messages_data
-    ], ensure_ascii=False, indent=2)
+        sanitized_messages.append(sanitized_msg)
+    
+    messages_json = json.dumps(sanitized_messages, ensure_ascii=False, indent=2)
     
     # Проверяем размер и при необходимости разбиваем на части
     if len(messages_json) > max_chars:
@@ -496,31 +502,35 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
         # Берем ПОСЛЕДНИЕ сообщения (самые актуальные), а не первые!
         messages_data_limited = messages_data[-limit:]  # Изменено на последние!
         
-        messages_json = json.dumps([
-            {
-                'sender': msg['sender'],
-                'text': msg['text'],
-                'date': msg['date'],
+        # Санитизируем ограниченные данные
+        sanitized_messages = []
+        for msg in messages_data_limited:
+            sanitized_msg = {
+                'sender': str(msg['sender']) if msg['sender'] else 'Unknown',
+                'text': str(msg['text']) if msg['text'] else '',
+                'date': str(msg['date']),
                 'message_id': msg['message_id'],
-                'chat_id': msg['chat_id']
+                'chat_id': str(msg['chat_id'])
             }
-            for msg in messages_data_limited
-        ], ensure_ascii=False, indent=2)
+            sanitized_messages.append(sanitized_msg)
+        
+        messages_json = json.dumps(sanitized_messages, ensure_ascii=False, indent=2)
     
     try:
         # Формируем параметры запроса
+        # Важно: убеждаемся что все строки в Unicode
+        system_content = str(ANALYSIS_PROMPT)
+        user_content = f'Данные сообщений для анализа (JSON):\n\n{messages_json}'
+        
         request_params = {
             'model': model,
             'messages': [
-                {'role': 'system', 'content': ANALYSIS_PROMPT},
-                {'role': 'user', 'content': f'Данные сообщений для анализа (JSON):\n\n{messages_json}'}
+                {'role': 'system', 'content': system_content},
+                {'role': 'user', 'content': user_content}
             ],
-            'temperature': 0.3
+            'temperature': 0.3,
+            'max_tokens': 4000
         }
-        
-        # Настройка max_tokens
-        # Sonar может генерировать до 4K токенов ответа
-        request_params['max_tokens'] = 4000
         
         # Добавляем reasoning для поддерживаемых моделей
         # Примечание: не все модели в Perplexity поддерживают reasoning
@@ -530,6 +540,7 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
             # Perplexity может не поддерживать этот параметр
             # request_params['reasoning'] = True
         
+        # Отправляем запрос с явной кодировкой
         response = perplexity_client.chat.completions.create(**request_params)
         
         summary = response.choices[0].message.content
@@ -550,6 +561,13 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
         print(error_msg)
         print(f"   Модель: {model}")
         print(f"   Размер данных: {len(messages_json)} символов")
+        print(f"   Тип ошибки: {type(e).__name__}")
+        
+        # Подробный traceback для отладки
+        import traceback
+        print("   Подробная трассировка:")
+        traceback.print_exc()
+        
         return error_msg
 
 
