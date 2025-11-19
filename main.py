@@ -1246,9 +1246,23 @@ async def main():
     print("💡 Используйте /copy для экспорта без затрат на API")
     print("=" * 60)
     print("\n👀 Ожидание команд...")
+    print("💡 Нажмите Ctrl+C для остановки бота")
     
-    await telegram_client.run_until_disconnected()
+    try:
+        await telegram_client.run_until_disconnected()
+    except KeyboardInterrupt:
+        print("\n🔄 Завершение работы...")
+        await telegram_client.disconnect()
+        print("✅ Соединение с Telegram закрыто")
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n\n")
+        print("=" * 60)
+        print("🛑 Бот остановлен пользователем (Ctrl+C)")
+        print("=" * 60)
+        print("\n💡 Для запуска снова используйте: python3 main.py")
+        print("✅ Все сессии сохранены\n")
