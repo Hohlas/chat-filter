@@ -869,6 +869,11 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
         in_list = False
         current_paragraph = []
         
+        # Отслеживаем структуру темы: после --- первая строка = заголовок, вторая = summary
+        after_separator = False
+        next_is_title = False
+        next_is_summary = False
+        
         for line in lines:
             line_stripped = line.strip()
             
@@ -899,10 +904,13 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
                     html_paragraphs.append('</ul>')
                     in_list = False
                 html_paragraphs.append('<hr>')
+                # После разделителя следующая непустая строка будет заголовком
+                next_is_title = True
+                next_is_summary = False
                 continue
             
-            # Заголовок темы (начинается с ###)
-            if line_stripped.startswith('###'):
+            # Обрабатываем заголовок темы (первая непустая строка после ---)
+            if next_is_title and line_stripped:
                 if current_paragraph:
                     para_text = ' '.join(current_paragraph)
                     para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
@@ -912,13 +920,15 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
                 if in_list:
                     html_paragraphs.append('</ul>')
                     in_list = False
-                # Убираем "###" и пробелы, делаем жирным шрифтом
-                text = line_stripped.lstrip('#').strip()
-                html_paragraphs.append(f'<h3><b>{text}</b></h3>')
+                # Добавляем эмодзи 💡 в начало заголовка и делаем жирным
+                text = line_stripped.strip()
+                html_paragraphs.append(f'<h3><b>💡 {text}</b></h3>')
+                next_is_title = False
+                next_is_summary = True  # Следующая непустая строка будет summary
                 continue
             
-            # Summary (делаем курсивом и убираем "Summary: ")
-            if line_stripped.startswith('Summary:'):
+            # Обрабатываем summary (вторая непустая строка после ---, если не начинается с "[")
+            if next_is_summary and line_stripped and not line_stripped.startswith('['):
                 if current_paragraph:
                     para_text = ' '.join(current_paragraph)
                     para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
@@ -928,10 +938,16 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
                 if in_list:
                     html_paragraphs.append('</ul>')
                     in_list = False
-                # Убираем "Summary:" и пробелы, делаем курсивом
-                summary_text = line_stripped[8:].strip()  # Убираем "Summary:"
+                # Делаем курсивом (наклонным)
+                summary_text = line_stripped.strip()
                 html_paragraphs.append(f'<p><i>{summary_text}</i></p>')
+                next_is_summary = False
                 continue
+            
+            # Если начинается с "[", значит это уже цитаты - summary пропущен
+            if next_is_summary and line_stripped and line_stripped.startswith('['):
+                next_is_summary = False
+                # Продолжаем обычную обработку этой строки
             
             # Список
             if line_stripped.startswith('- ') or line_stripped.startswith('* '):
