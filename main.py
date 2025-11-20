@@ -861,49 +861,108 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
         telegraph = Telegraph(access_token=account['access_token'])
         
         # Конвертируем Markdown в HTML для Telegraph
-        # Telegraph поддерживает HTML теги
-        html_content = content
+        # Telegraph поддерживает только определённые теги: a, aside, b, blockquote, br, code, em, figcaption, figure, h3, h4, hr, i, iframe, img, li, ol, p, pre, s, strong, u, ul, video
         
-        # Простая конвертация Markdown в HTML
-        # Заменяем основные Markdown элементы на HTML
-        html_content = html_content.replace('\n---\n', '<hr>')
-        html_content = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html_content)
-        html_content = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', html_content)
-        
-        # Разбиваем на параграфы и обрабатываем
-        paragraphs = html_content.split('\n\n')
+        # Разбиваем на строки для построчной обработки
+        lines = content.split('\n')
         html_paragraphs = []
         in_list = False
+        current_paragraph = []
         
-        for para in paragraphs:
-            para = para.strip()
-            if not para:
+        for line in lines:
+            line_stripped = line.strip()
+            
+            # Пустая строка - завершаем текущий параграф
+            if not line_stripped:
+                if current_paragraph:
+                    # Объединяем накопленные строки параграфа
+                    para_text = ' '.join(current_paragraph)
+                    # Конвертируем Markdown элементы
+                    para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+                    para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+                    html_paragraphs.append(f'<p>{para_text}</p>')
+                    current_paragraph = []
                 if in_list:
                     html_paragraphs.append('</ul>')
                     in_list = False
                 continue
-                
-            # Если это заголовок (начинается с #)
-            if para.startswith('#'):
+            
+            # Разделитель тем
+            if line_stripped == '---':
+                if current_paragraph:
+                    para_text = ' '.join(current_paragraph)
+                    para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+                    para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+                    html_paragraphs.append(f'<p>{para_text}</p>')
+                    current_paragraph = []
                 if in_list:
                     html_paragraphs.append('</ul>')
                     in_list = False
-                level = len(para) - len(para.lstrip('#'))
-                text = para.lstrip('# ').strip()
-                html_paragraphs.append(f'<h{min(level, 6)}>{text}</h{min(level, 6)}>')
-            # Если это список
-            elif para.startswith('- ') or para.startswith('* '):
+                html_paragraphs.append('<hr>')
+                continue
+            
+            # Заголовок темы (начинается с ###)
+            if line_stripped.startswith('###'):
+                if current_paragraph:
+                    para_text = ' '.join(current_paragraph)
+                    para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+                    para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+                    html_paragraphs.append(f'<p>{para_text}</p>')
+                    current_paragraph = []
+                if in_list:
+                    html_paragraphs.append('</ul>')
+                    in_list = False
+                # Убираем "###" и пробелы, делаем жирным шрифтом
+                text = line_stripped.lstrip('#').strip()
+                html_paragraphs.append(f'<h3><b>{text}</b></h3>')
+                continue
+            
+            # Summary (делаем курсивом и убираем "Summary: ")
+            if line_stripped.startswith('Summary:'):
+                if current_paragraph:
+                    para_text = ' '.join(current_paragraph)
+                    para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+                    para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+                    html_paragraphs.append(f'<p>{para_text}</p>')
+                    current_paragraph = []
+                if in_list:
+                    html_paragraphs.append('</ul>')
+                    in_list = False
+                # Убираем "Summary:" и пробелы, делаем курсивом
+                summary_text = line_stripped[8:].strip()  # Убираем "Summary:"
+                html_paragraphs.append(f'<p><i>{summary_text}</i></p>')
+                continue
+            
+            # Список
+            if line_stripped.startswith('- ') or line_stripped.startswith('* '):
+                if current_paragraph:
+                    para_text = ' '.join(current_paragraph)
+                    para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+                    para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+                    html_paragraphs.append(f'<p>{para_text}</p>')
+                    current_paragraph = []
                 if not in_list:
                     html_paragraphs.append('<ul>')
                     in_list = True
-                items = [item.strip('- *').strip() for item in para.split('\n') if item.strip().startswith(('- ', '* '))]
-                for item in items:
-                    html_paragraphs.append(f'<li>{item}</li>')
-            else:
-                if in_list:
-                    html_paragraphs.append('</ul>')
-                    in_list = False
-                html_paragraphs.append(f'<p>{para}</p>')
+                item_text = line_stripped.lstrip('- *').strip()
+                # Конвертируем Markdown элементы в списке
+                item_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', item_text)
+                item_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', item_text)
+                html_paragraphs.append(f'<li>{item_text}</li>')
+                continue
+            
+            # Обычная строка - добавляем к текущему параграфу
+            if in_list:
+                html_paragraphs.append('</ul>')
+                in_list = False
+            current_paragraph.append(line_stripped)
+        
+        # Завершаем последний параграф
+        if current_paragraph:
+            para_text = ' '.join(current_paragraph)
+            para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+            para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+            html_paragraphs.append(f'<p>{para_text}</p>')
         
         if in_list:
             html_paragraphs.append('</ul>')
