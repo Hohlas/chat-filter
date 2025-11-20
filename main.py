@@ -409,7 +409,7 @@ def optimize_messages(messages_data, chat_id_str):
 
 async def collect_messages(chat_id, hours=None, days=None, limit=None):
     """
-    Собирает сообщения из чата за указанный период или количество
+    Собирает сообщения из чата с догрузкой родительских сообщений для контекста
     
     Args:
         chat_id: ID чата для анализа
@@ -426,6 +426,8 @@ async def collect_messages(chat_id, hours=None, days=None, limit=None):
     chat_id_str = str(chat_id).replace('-100', '')
     
     messages_data = []
+    loaded_ids = set()  # Отслеживаем загруженные ID
+    reply_to_ids = set()  # Отслеживаем ID на которые есть ответы
     
     if limit:
         # Режим: последние N сообщений
@@ -449,7 +451,9 @@ async def collect_messages(chat_id, hours=None, days=None, limit=None):
                 reply_to = None
                 if message.reply_to and hasattr(message.reply_to, 'reply_to_msg_id'):
                     reply_to = message.reply_to.reply_to_msg_id
+                    reply_to_ids.add(reply_to)
                 
+                loaded_ids.add(message.id)
                 messages_data.append({
                     'sender': sender_name,
                     'text': message.text,
@@ -488,7 +492,9 @@ async def collect_messages(chat_id, hours=None, days=None, limit=None):
                 reply_to = None
                 if message.reply_to and hasattr(message.reply_to, 'reply_to_msg_id'):
                     reply_to = message.reply_to.reply_to_msg_id
+                    reply_to_ids.add(reply_to)
                 
+                loaded_ids.add(message.id)
                 messages_data.append({
                     'sender': sender_name,
                     'text': message.text,
@@ -501,20 +507,116 @@ async def collect_messages(chat_id, hours=None, days=None, limit=None):
     messages_data.reverse()
     
     print(f"✅ Загружено {len(messages_data)} сообщений")
+    
+    # Догружаем недостающие родительские сообщения для контекста
+    missing_ids = reply_to_ids - loaded_ids
+    if missing_ids:
+        # Ограничиваем до 50 сообщений
+        missing_ids_limited = list(missing_ids)[:50]
+        print(f"🔄 Догрузка {len(missing_ids_limited)} родительских сообщений для контекста...")
+        
+        try:
+            missing_messages = await telegram_client.get_messages(chat_id, ids=missing_ids_limited)
+            
+            # Обрабатываем догруженные сообщения
+            for msg in missing_messages:
+                if msg and msg.text and not isinstance(msg, list):
+                    sender = await msg.get_sender()
+                    sender_name = "Unknown"
+                    
+                    if hasattr(sender, 'first_name'):
+                        sender_name = sender.first_name
+                        if hasattr(sender, 'last_name') and sender.last_name:
+                            sender_name += f" {sender.last_name}"
+                    elif hasattr(sender, 'title'):
+                        sender_name = sender.title
+                    
+                    # Проверяем есть ли у догруженного сообщения свой reply_to
+                    reply_to = None
+                    if msg.reply_to and hasattr(msg.reply_to, 'reply_to_msg_id'):
+                        reply_to = msg.reply_to.reply_to_msg_id
+                    
+                    messages_data.append({
+                        'sender': sender_name,
+                        'text': msg.text,
+                        'date': msg.date.strftime('%Y-%m-%d %H:%M:%S'),
+                        'message_id': msg.id,
+                        'reply_to': reply_to
+                    })
+                    loaded_ids.add(msg.id)
+            
+            # Пересортировываем с учетом догруженных
+            messages_data.sort(key=lambda x: x['date'])
+            print(f"✅ Догружено {len([m for m in missing_messages if m and m.text])} родительских сообщений")
+            
+        except Exception as e:
+            print(f"⚠️  Не удалось загрузить некоторые родительские сообщения: {e}")
+    
     return messages_data, chat_id_str
 
 
-async def create_summary(messages_data, model='sonar', use_reasoning=False):
+def build_tree_structure(messages_data):
+    """
+    Преобразует плоский список сообщений в древовидную структуру
+    
+    Args:
+        messages_data: Плоский список сообщений с reply_to
+    
+    Returns:
+        Список корневых сообщений с вложенными replies
+    """
+    # Создаем словарь для быстрого поиска сообщений по ID
+    messages_by_id = {}
+    for msg in messages_data:
+        msg_id = msg['message_id']
+        messages_by_id[msg_id] = {
+            'id': msg_id,
+            'sender': msg['sender'],
+            'text': msg['text'],
+            'replies': []
+        }
+    
+    # Строим дерево: добавляем ответы к родительским сообщениям
+    root_messages = []
+    for msg in messages_data:
+        msg_id = msg['message_id']
+        reply_to = msg.get('reply_to')
+        
+        current_msg = messages_by_id[msg_id]
+        
+        if reply_to and reply_to in messages_by_id:
+            # Это ответ на существующее сообщение - добавляем в replies родителя
+            messages_by_id[reply_to]['replies'].append(current_msg)
+        else:
+            # Это корневое сообщение (или ответ на отсутствующее)
+            root_messages.append(current_msg)
+    
+    # Удаляем пустые массивы replies для экономии токенов
+    def clean_empty_replies(msg):
+        if not msg['replies']:
+            del msg['replies']
+        else:
+            for reply in msg['replies']:
+                clean_empty_replies(reply)
+    
+    for msg in root_messages:
+        clean_empty_replies(msg)
+    
+    return root_messages
+
+
+async def create_summary(messages_data, chat_id_str, model='sonar', use_reasoning=False):
     """
     Создает выжимку из сообщений с помощью Perplexity API
     
     Args:
-        messages_data: Список словарей с сообщениями (включая chat_id, message_id)
+        messages_data: Список словарей с сообщениями (включая reply_to)
+        chat_id_str: ID чата для ссылок
         model: Модель для использования (sonar, claude-3.5-sonnet и т.д.)
         use_reasoning: Использовать ли reasoning режим (для моделей с поддержкой)
     
     Returns:
-        Текст выжимки
+        Кортеж (текст выжимки, информация об использовании токенов)
     """
     if not messages_data:
         return "❌ Нет сообщений для анализа за указанный период (все отфильтровано)"
@@ -539,41 +641,20 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
             return value.decode('utf-8', errors='ignore')
         return str(value)
     
-    # Создаем оптимизированную структуру
-    # Выносим повторяющиеся данные в metadata
-    if messages_data:
-        first_msg = messages_data[0]
-        period_start = first_msg.get('date', '')
-        chat_id = first_msg.get('chat_id', '')
-    else:
-        period_start = ''
-        chat_id = ''
+    # Получаем дату первого сообщения для metadata
+    period_start = messages_data[0].get('date', '') if messages_data else ''
     
+    # Строим древовидную структуру с вложенными replies
+    tree_messages = build_tree_structure(messages_data)
+    
+    # Создаем финальную структуру с metadata
     optimized_structure = {
         'metadata': {
-            'chat_id': safe_str(chat_id),
+            'chat_id': safe_str(chat_id_str),
             'period_start': safe_str(period_start)
         },
-        'messages': []
+        'messages': tree_messages
     }
-    
-    for msg in messages_data:
-        # Извлекаем только время (не дату) для экономии токенов
-        full_date = msg.get('date', '')
-        time_only = full_date.split(' ')[1][:5] if ' ' in full_date else ''  # Формат HH:MM
-        
-        optimized_msg = {
-            'id': int(msg.get('message_id', 0)),
-            'sender': safe_str(msg.get('sender', 'Unknown')),
-            'text': safe_str(msg.get('text', '')),
-            'time': time_only
-        }
-        
-        # Добавляем reply_to только если есть
-        if msg.get('reply_to'):
-            optimized_msg['reply_to'] = int(msg['reply_to'])
-        
-        optimized_structure['messages'].append(optimized_msg)
     
     # Используем ensure_ascii=False для сохранения кириллицы
     messages_json = json.dumps(optimized_structure, ensure_ascii=False, indent=2)
@@ -597,38 +678,19 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
         # Берем ПОСЛЕДНИЕ сообщения (самые актуальные), а не первые!
         messages_data_limited = messages_data[-limit:]  # Изменено на последние!
         
-        # Пересоздаем оптимизированную структуру с ограниченными данными
-        if messages_data_limited:
-            first_msg = messages_data_limited[0]
-            period_start = first_msg.get('date', '')
-            chat_id = first_msg.get('chat_id', '')
-        else:
-            period_start = ''
-            chat_id = ''
+        # Получаем дату первого сообщения из ограниченной выборки
+        period_start = messages_data_limited[0].get('date', '') if messages_data_limited else ''
+        
+        # Строим древовидную структуру с ограниченными данными
+        tree_messages = build_tree_structure(messages_data_limited)
         
         optimized_structure = {
             'metadata': {
-                'chat_id': safe_str(chat_id),
+                'chat_id': safe_str(chat_id_str),
                 'period_start': safe_str(period_start)
             },
-            'messages': []
+            'messages': tree_messages
         }
-        
-        for msg in messages_data_limited:
-            full_date = msg.get('date', '')
-            time_only = full_date.split(' ')[1][:5] if ' ' in full_date else ''
-            
-            optimized_msg = {
-                'id': int(msg.get('message_id', 0)),
-                'sender': safe_str(msg.get('sender', 'Unknown')),
-                'text': safe_str(msg.get('text', '')),
-                'time': time_only
-            }
-            
-            if msg.get('reply_to'):
-                optimized_msg['reply_to'] = int(msg['reply_to'])
-            
-            optimized_structure['messages'].append(optimized_msg)
         
         messages_json = json.dumps(optimized_structure, ensure_ascii=False, indent=2)
     
@@ -811,7 +873,7 @@ async def process_chat_command(event, use_ai=True):
         # Ветвление: с AI или без
         if use_ai:
             # Режим /sum - анализ с AI
-            summary, usage_info = await create_summary(optimized_messages, model=CURRENT_MODEL, use_reasoning=USE_REASONING)
+            summary, usage_info = await create_summary(optimized_messages, chat_id_str, model=CURRENT_MODEL, use_reasoning=USE_REASONING)
             save_analysis(optimized_messages, summary)
             
             # Отправляем выжимку (без лишней информации)
