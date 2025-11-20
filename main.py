@@ -923,8 +923,16 @@ async def process_chat_command(event, use_ai=True):
             summary, usage_info = await create_summary(optimized_messages, chat_id_str, model=CURRENT_MODEL, use_reasoning=USE_REASONING)
             save_analysis(optimized_messages, summary)
             
-            # Отправляем выжимку (без лишней информации)
-            response = summary
+            # Подсчитываем количество тем (по разделителю "---")
+            # Темы разделяются строкой "---" на отдельной строке
+            # Количество тем = количество разделителей + 1 (если есть хотя бы одна тема)
+            separator_count = summary.count('\n---\n')
+            topics_count = separator_count + 1 if separator_count > 0 or summary.strip() else 0
+            
+            # Формируем статистику для сообщения
+            stats_message = f"📊 **Анализ завершен**\n\n"
+            stats_message += f"📈 **Статистика:**\n"
+            stats_message += f"• Тем: {topics_count}\n"
             
             # Добавляем информацию о токенах и стоимости
             if usage_info:
@@ -939,35 +947,43 @@ async def process_chat_command(event, use_ai=True):
                 output_cost = (completion_tokens / 1_000_000) * 15.0
                 total_cost = input_cost + output_cost
                 
-                response += f"\n\n---\n\n"
-                response += f"📊 **Использовано токенов:**\n"
-                response += f"• Промпт: {prompt_tokens:,}\n"
-                response += f"• Ответ: {completion_tokens:,}\n"
-                response += f"• Всего: {total_tokens:,}\n"
-                response += f"💰 Стоимость: ${total_cost:.4f}"
+                stats_message += f"• Токенов: {total_tokens:,}\n"
+                stats_message += f"• Стоимость: ${total_cost:.4f}\n"
             
-            # Если сообщение слишком длинное, разбиваем на части
-            max_length = 4096
-            if len(response) > max_length:
-                await telegram_client.send_message(
-                    RESULTS_DESTINATION, 
-                    response[:max_length],
-                    reply_to=topic_id
-                )
-                remaining = response[max_length:]
-                while remaining:
-                    await telegram_client.send_message(
-                        RESULTS_DESTINATION, 
-                        remaining[:max_length],
-                        reply_to=topic_id
-                    )
-                    remaining = remaining[max_length:]
-            else:
-                await telegram_client.send_message(
-                    RESULTS_DESTINATION, 
-                    response,
-                    reply_to=topic_id
-                )
+            stats_message += f"\n📄 Полный анализ в прикрепленном файле"
+            
+            # Сохраняем полный анализ в .md файл
+            filename = f"analysis_{chat_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(summary)
+                # Добавляем статистику в конец файла
+                if usage_info:
+                    f.write(f"\n\n---\n\n")
+                    f.write(f"📊 **Использовано токенов:**\n")
+                    f.write(f"• Промпт: {prompt_tokens:,}\n")
+                    f.write(f"• Ответ: {completion_tokens:,}\n")
+                    f.write(f"• Всего: {total_tokens:,}\n")
+                    f.write(f"💰 Стоимость: ${total_cost:.4f}\n")
+            
+            # Отправляем статистику в сообщении
+            await telegram_client.send_message(
+                RESULTS_DESTINATION, 
+                stats_message,
+                reply_to=topic_id
+            )
+            
+            # Отправляем полный анализ как .md файл
+            await telegram_client.send_file(
+                RESULTS_DESTINATION,
+                filename,
+                caption=f"📄 **Полный анализ чата '{chat_name}'**\n\n"
+                       f"Тем: {topics_count}\n"
+                       f"Сообщений проанализировано: {len(optimized_messages)}",
+                reply_to=topic_id
+            )
+            
+            # Удаляем временный файл
+            os.remove(filename)
             
             print("✅ Анализ с AI успешно завершён")
         
