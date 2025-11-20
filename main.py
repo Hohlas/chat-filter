@@ -1111,6 +1111,16 @@ async def process_chat_command(event, use_ai=True):
         # Оптимизируем сообщения (фильтруем шум)
         optimized_messages = optimize_messages(messages_data, chat_id_str)
         
+        # Предупреждение о больших запросах (особенно для AI анализа)
+        if use_ai and len(optimized_messages) > 200:
+            await telegram_client.send_message(
+                RESULTS_DESTINATION,
+                f"⚠️ **Внимание:** Большой объем сообщений ({len(optimized_messages)})\n"
+                f"Обработка может занять несколько минут. Пожалуйста, подождите...\n"
+                f"💡 Совет: Для больших объемов лучше использовать `/copy`, а затем анализировать вручную.",
+                reply_to=topic_id
+            )
+        
         if not optimized_messages:
             await telegram_client.send_message(
                 RESULTS_DESTINATION, 
@@ -1124,6 +1134,17 @@ async def process_chat_command(event, use_ai=True):
         if use_ai:
             # Режим /sum - анализ с AI
             summary, usage_info = await create_summary(optimized_messages, chat_id_str, model=CURRENT_MODEL, use_reasoning=USE_REASONING, period_start_date=period_start_date)
+            
+            # Проверяем, что summary не является сообщением об ошибке
+            if summary.startswith('❌'):
+                # Если получили ошибку, отправляем её пользователю и выходим
+                await telegram_client.send_message(
+                    RESULTS_DESTINATION,
+                    f"{summary}\n\n⚠️ Анализ прерван. Попробуйте позже или уменьшите количество сообщений.",
+                    reply_to=topic_id
+                )
+                return
+            
             save_analysis(optimized_messages, summary)
             
             # Подсчитываем количество тем (по разделителю "---")
