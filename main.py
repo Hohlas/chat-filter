@@ -445,11 +445,17 @@ async def collect_messages(chat_id, hours=None, days=None, limit=None):
                 elif hasattr(sender, 'title'):
                     sender_name = sender.title
                 
+                # Добавляем информацию об ответе на сообщение (если есть)
+                reply_to = None
+                if message.reply_to and hasattr(message.reply_to, 'reply_to_msg_id'):
+                    reply_to = message.reply_to.reply_to_msg_id
+                
                 messages_data.append({
                     'sender': sender_name,
                     'text': message.text,
                     'date': message.date.strftime('%Y-%m-%d %H:%M:%S'),
-                    'message_id': message.id
+                    'message_id': message.id,
+                    'reply_to': reply_to
                 })
                 count += 1
     else:
@@ -478,11 +484,17 @@ async def collect_messages(chat_id, hours=None, days=None, limit=None):
                 elif hasattr(sender, 'title'):
                     sender_name = sender.title
                 
+                # Добавляем информацию об ответе на сообщение (если есть)
+                reply_to = None
+                if message.reply_to and hasattr(message.reply_to, 'reply_to_msg_id'):
+                    reply_to = message.reply_to.reply_to_msg_id
+                
                 messages_data.append({
                     'sender': sender_name,
                     'text': message.text,
                     'date': message.date.strftime('%Y-%m-%d %H:%M:%S'),
-                    'message_id': message.id
+                    'message_id': message.id,
+                    'reply_to': reply_to
                 })
     
     # Сортируем по времени (от старых к новым)
@@ -517,7 +529,7 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
     else:
         max_chars = 200000  # Консервативный лимит для других моделей
     
-    # Формируем JSON для отправки (более структурированный формат)
+    # Формируем ОПТИМИЗИРОВАННЫЙ JSON для экономии токенов
     # Санитизируем данные: убеждаемся что все строки в Unicode
     def safe_str(value):
         """Безопасное преобразование в строку с обработкой кириллицы"""
@@ -527,19 +539,44 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
             return value.decode('utf-8', errors='ignore')
         return str(value)
     
-    sanitized_messages = []
+    # Создаем оптимизированную структуру
+    # Выносим повторяющиеся данные в metadata
+    if messages_data:
+        first_msg = messages_data[0]
+        period_start = first_msg.get('date', '')
+        chat_id = first_msg.get('chat_id', '')
+    else:
+        period_start = ''
+        chat_id = ''
+    
+    optimized_structure = {
+        'metadata': {
+            'chat_id': safe_str(chat_id),
+            'period_start': safe_str(period_start)
+        },
+        'messages': []
+    }
+    
     for msg in messages_data:
-        sanitized_msg = {
+        # Извлекаем только время (не дату) для экономии токенов
+        full_date = msg.get('date', '')
+        time_only = full_date.split(' ')[1][:5] if ' ' in full_date else ''  # Формат HH:MM
+        
+        optimized_msg = {
+            'id': int(msg.get('message_id', 0)),
             'sender': safe_str(msg.get('sender', 'Unknown')),
             'text': safe_str(msg.get('text', '')),
-            'date': safe_str(msg.get('date', '')),
-            'message_id': int(msg.get('message_id', 0)),
-            'chat_id': safe_str(msg.get('chat_id', ''))
+            'time': time_only
         }
-        sanitized_messages.append(sanitized_msg)
+        
+        # Добавляем reply_to только если есть
+        if msg.get('reply_to'):
+            optimized_msg['reply_to'] = int(msg['reply_to'])
+        
+        optimized_structure['messages'].append(optimized_msg)
     
     # Используем ensure_ascii=False для сохранения кириллицы
-    messages_json = json.dumps(sanitized_messages, ensure_ascii=False, indent=2)
+    messages_json = json.dumps(optimized_structure, ensure_ascii=False, indent=2)
     
     # Проверяем размер и при необходимости разбиваем на части
     if len(messages_json) > max_chars:
@@ -560,19 +597,40 @@ async def create_summary(messages_data, model='sonar', use_reasoning=False):
         # Берем ПОСЛЕДНИЕ сообщения (самые актуальные), а не первые!
         messages_data_limited = messages_data[-limit:]  # Изменено на последние!
         
-        # Санитизируем ограниченные данные используя ту же функцию
-        sanitized_messages = []
+        # Пересоздаем оптимизированную структуру с ограниченными данными
+        if messages_data_limited:
+            first_msg = messages_data_limited[0]
+            period_start = first_msg.get('date', '')
+            chat_id = first_msg.get('chat_id', '')
+        else:
+            period_start = ''
+            chat_id = ''
+        
+        optimized_structure = {
+            'metadata': {
+                'chat_id': safe_str(chat_id),
+                'period_start': safe_str(period_start)
+            },
+            'messages': []
+        }
+        
         for msg in messages_data_limited:
-            sanitized_msg = {
+            full_date = msg.get('date', '')
+            time_only = full_date.split(' ')[1][:5] if ' ' in full_date else ''
+            
+            optimized_msg = {
+                'id': int(msg.get('message_id', 0)),
                 'sender': safe_str(msg.get('sender', 'Unknown')),
                 'text': safe_str(msg.get('text', '')),
-                'date': safe_str(msg.get('date', '')),
-                'message_id': int(msg.get('message_id', 0)),
-                'chat_id': safe_str(msg.get('chat_id', ''))
+                'time': time_only
             }
-            sanitized_messages.append(sanitized_msg)
+            
+            if msg.get('reply_to'):
+                optimized_msg['reply_to'] = int(msg['reply_to'])
+            
+            optimized_structure['messages'].append(optimized_msg)
         
-        messages_json = json.dumps(sanitized_messages, ensure_ascii=False, indent=2)
+        messages_json = json.dumps(optimized_structure, ensure_ascii=False, indent=2)
     
     try:
         # Формируем параметры запроса
