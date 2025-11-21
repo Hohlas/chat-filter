@@ -1266,6 +1266,56 @@ async def process_chat_command(event, use_ai=True):
                 period_start_date=period_start_date
             )
             
+            # Получаем время начала периода
+            period_start_time = ""
+            period_start_dt = None
+            if period_start_date:
+                try:
+                    period_start_dt = datetime.strptime(period_start_date, '%Y-%m-%d %H:%M:%S')
+                    period_start_time = period_start_dt.strftime('%d.%m %H:%M')
+                except (ValueError, TypeError):
+                    period_start_time = period_start_date[:16] if len(period_start_date) >= 16 else period_start_date
+            
+            if not period_start_time:
+                period_start_dt = datetime.now()
+                period_start_time = period_start_dt.strftime('%d.%m %H:%M')
+            
+            # Получаем дату последнего сообщения
+            period_end_dt = None
+            period_end_time = ""
+            if messages_data:
+                try:
+                    last_message = max(messages_data, key=lambda x: x.get('date', ''))
+                    last_date_str = last_message.get('date', '')
+                    if last_date_str:
+                        period_end_dt = datetime.strptime(last_date_str, '%Y-%m-%d %H:%M:%S')
+                        period_end_time = period_end_dt.strftime('%d.%m %H:%M')
+                except (ValueError, TypeError, KeyError):
+                    period_end_dt = datetime.now()
+                    period_end_time = period_end_dt.strftime('%d.%m %H:%M')
+            
+            # Вычисляем период в часах
+            period_hours = None
+            if period_start_dt and period_end_dt:
+                delta = period_end_dt - period_start_dt
+                period_hours = int(delta.total_seconds() / 3600)
+            
+            # Формируем информацию о периоде
+            period_info = ""
+            if period_hours is not None:
+                period_info = f"\n📅 **Период экспорта:**\n"
+                period_info += f"• Обработано: {len(optimized_messages)} сообщений\n"
+                if period_hours < 24:
+                    period_info += f"• За период: {period_hours} часов\n"
+                else:
+                    period_days = period_hours // 24
+                    remaining_hours = period_hours % 24
+                    if remaining_hours > 0:
+                        period_info += f"• За период: {period_days} дней {remaining_hours} часов\n"
+                    else:
+                        period_info += f"• За период: {period_days} дней\n"
+                period_info += f"• С {period_start_time} по {period_end_time}\n"
+            
             # Создаем JSON строку
             json_export = json.dumps(export_data, ensure_ascii=False, indent=2)
             
@@ -1281,7 +1331,8 @@ async def process_chat_command(event, use_ai=True):
                 caption=f"📋 **Экспорт сообщений**\n\n"
                        f"Чат: {chat_name}\n"
                        f"Всего: {len(messages_data)} сообщений\n"
-                       f"После фильтрации: {len(optimized_messages)} сообщений\n\n"
+                       f"После фильтрации: {len(optimized_messages)} сообщений\n"
+                       f"{period_info}\n"
                        f"💡 Готово для копирования в Perplexity!\n"
                        f"📊 Формат: Оптимизированный JSON v2.0\n"
                        f"   • Древовидная структура с replies\n"
