@@ -1,6 +1,6 @@
 [Unit]
 Description=Telegram Chat Analyzer Bot
-Documentation=https://github.com/your-username/chat-filter
+Documentation=https://github.com/your-username/ChatSum
 After=network-online.target
 Wants=network-online.target
 
@@ -8,8 +8,8 @@ Wants=network-online.target
 Type=simple
 User=your_username
 Group=your_username
-WorkingDirectory=/home/your_username/chat-filter
-ExecStart=/usr/bin/python3 /home/your_username/chat-filter/main.py
+WorkingDirectory=/home/your_username/ChatSum
+ExecStart=/usr/bin/python3 /home/your_username/ChatSum/main.py
 
 # Restart policy
 Restart=always
@@ -30,7 +30,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/your_username/chat-filter
+ReadWritePaths=/home/your_username/ChatSum
 
 [Install]
 WantedBy=multi-user.target

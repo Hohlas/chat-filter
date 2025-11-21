@@ -118,7 +118,7 @@ USE_REASONING=false
 
 ### Способ 1: Через nano/vim
 ```bash
-cd ~/chat-filter
+cd ~/ChatSum
 nano EXCLUDED_USERS.txt
 # Редактируем, сохраняем (Ctrl+O, Enter, Ctrl+X)
 ```

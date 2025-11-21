@@ -30,8 +30,8 @@
 
 ```powershell
 # 1. Клонировать репозиторий
-git clone https://github.com/Hohlas/chat-filter.git
-cd chat-filter
+git clone https://github.com/Hohlas/ChatSum.git
+cd ChatSum
 
 # 2. Установить зависимости
 pip install -r requirements.txt
@@ -48,8 +48,8 @@ python main.py
 
 ```bash
 # 1. Клонировать репозиторий
-git clone https://github.com/Hohlas/chat-filter.git
-cd chat-filter
+git clone https://github.com/Hohlas/ChatSum.git
+cd ChatSum
 
 # 2. Установить зависимости
 pip3 install -r requirements.txt
@@ -211,8 +211,8 @@ CHAT_ID=123456789
 
 ```bash
 # 1. Установить на сервере
-git clone https://github.com/ваш-username/chat-filter.git
-cd chat-filter
+git clone https://github.com/ваш-username/ChatSum.git
+cd ChatSum
 pip3 install -r requirements.txt
 
 # 2. Настроить (создать private.txt с ключами)
@@ -292,7 +292,7 @@ screen -r telegram-chat-analyzer
 **Еженедельные отчеты:**
 ```bash
 # Добавить в cron (Linux)
-0 18 * * 5 cd ~/chat-filter && python3 -c "ваш скрипт автоматизации"
+0 18 * * 5 cd ~/ChatSum && python3 -c "ваш скрипт автоматизации"
 ```
 
 **Интеграция с другими сервисами:**

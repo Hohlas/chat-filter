@@ -37,8 +37,8 @@ Telegram userbot для автоматического анализа сообщ
 ### 2. Установка
 
 ```bash
-git clone https://github.com/Hohlas/chat-filter.git
-cd chat-filter
+git clone https://github.com/Hohlas/ChatSum.git
+cd ChatSum
 pip install -r requirements.txt
 ```
 
@@ -164,8 +164,8 @@ After=network.target
 [Service]
 Type=simple
 User=your_username
-WorkingDirectory=/path/to/chat-filter
-ExecStart=/usr/bin/python3 /path/to/chat-filter/main.py
+WorkingDirectory=/path/to/ChatSum
+ExecStart=/usr/bin/python3 /path/to/ChatSum/main.py
 Restart=always
 RestartSec=10
 
