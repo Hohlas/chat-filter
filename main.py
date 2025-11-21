@@ -869,6 +869,73 @@ def save_analysis(messages_data, summary):
     return filename
 
 
+def calculate_period_info(messages_data, optimized_messages, period_start_date, label="анализа"):
+    """
+    Вычисляет информацию о периоде сообщений
+    
+    Args:
+        messages_data: Список всех сообщений (для получения конечной даты)
+        optimized_messages: Список отфильтрованных сообщений (для подсчета)
+        period_start_date: Дата начала периода в формате 'YYYY-MM-DD HH:MM:SS'
+        label: Метка для заголовка ("анализа" или "экспорта")
+    
+    Returns:
+        Tuple (period_info_text, period_start_time, period_end_time, period_start_dt, period_end_dt)
+    """
+    # Получаем время начала периода
+    period_start_time = ""
+    period_start_dt = None
+    if period_start_date:
+        try:
+            period_start_dt = datetime.strptime(period_start_date, '%Y-%m-%d %H:%M:%S')
+            period_start_time = period_start_dt.strftime('%d.%m %H:%M')
+        except (ValueError, TypeError):
+            period_start_time = period_start_date[:16] if len(period_start_date) >= 16 else period_start_date
+    
+    if not period_start_time:
+        period_start_dt = datetime.now()
+        period_start_time = period_start_dt.strftime('%d.%m %H:%M')
+    
+    # Получаем дату последнего сообщения (самое свежее)
+    period_end_dt = None
+    period_end_time = ""
+    if messages_data:
+        try:
+            last_message = max(messages_data, key=lambda x: x.get('date', ''))
+            last_date_str = last_message.get('date', '')
+            if last_date_str:
+                period_end_dt = datetime.strptime(last_date_str, '%Y-%m-%d %H:%M:%S')
+                period_end_time = period_end_dt.strftime('%d.%m %H:%M')
+        except (ValueError, TypeError, KeyError):
+            period_end_dt = datetime.now()
+            period_end_time = period_end_dt.strftime('%d.%m %H:%M')
+    
+    # Вычисляем период в часах
+    period_hours = None
+    if period_start_dt and period_end_dt:
+        delta = period_end_dt - period_start_dt
+        # Используем abs() для защиты от отрицательных значений при неправильном порядке дат
+        period_hours = abs(int(delta.total_seconds() / 3600))
+    
+    # Формируем информацию о периоде
+    period_info = ""
+    if period_hours is not None:
+        period_info = f"\n\n📅 **Период {label}:**\n"
+        period_info += f"• Обработано: {len(optimized_messages)} сообщений\n"
+        if period_hours < 24:
+            period_info += f"• За период: {period_hours} часов\n"
+        else:
+            period_days = period_hours // 24
+            remaining_hours = period_hours % 24
+            if remaining_hours > 0:
+                period_info += f"• За период: {period_days} дней {remaining_hours} часов\n"
+            else:
+                period_info += f"• За период: {period_days} дней\n"
+        period_info += f"• С {period_start_time} по {period_end_time}\n"
+    
+    return period_info, period_start_time, period_end_time, period_start_dt, period_end_dt
+
+
 def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
     """
     Публикует статью в Telegraph
@@ -1170,60 +1237,10 @@ async def process_chat_command(event, use_ai=True):
                 full_content += f"• Всего: {total_tokens:,}\n"
                 full_content += f"💰 Стоимость: ${total_cost:.4f}\n"
             
-            # Получаем время начала анализа из period_start_date (дата первого сообщения исходного периода)
-            period_start_time = ""
-            period_start_dt = None
-            if period_start_date:
-                try:
-                    # Парсим дату из формата "2025-11-20 12:01:31"
-                    period_start_dt = datetime.strptime(period_start_date, '%Y-%m-%d %H:%M:%S')
-                    period_start_time = period_start_dt.strftime('%d.%m %H:%M')
-                except (ValueError, TypeError):
-                    # Если формат не совпадает, используем как есть или берем первые 16 символов
-                    period_start_time = period_start_date[:16] if len(period_start_date) >= 16 else period_start_date
-            
-            # Если не удалось получить время начала, используем текущее время
-            if not period_start_time:
-                period_start_dt = datetime.now()
-                period_start_time = period_start_dt.strftime('%d.%m %H:%M')
-            
-            # Получаем дату последнего сообщения (самое свежее)
-            period_end_dt = None
-            period_end_time = ""
-            if messages_data:
-                try:
-                    # Находим последнее сообщение по дате (самое свежее)
-                    last_message = max(messages_data, key=lambda x: x.get('date', ''))
-                    last_date_str = last_message.get('date', '')
-                    if last_date_str:
-                        period_end_dt = datetime.strptime(last_date_str, '%Y-%m-%d %H:%M:%S')
-                        period_end_time = period_end_dt.strftime('%d.%m %H:%M')
-                except (ValueError, TypeError, KeyError):
-                    # Если не удалось, используем текущее время
-                    period_end_dt = datetime.now()
-                    period_end_time = period_end_dt.strftime('%d.%m %H:%M')
-            
-            # Вычисляем период в часах
-            period_hours = None
-            if period_start_dt and period_end_dt:
-                delta = period_end_dt - period_start_dt
-                period_hours = int(delta.total_seconds() / 3600)
-            
-            # Формируем информацию о периоде
-            period_info = ""
-            if period_hours is not None:
-                period_info = f"\n\n📅 **Период анализа:**\n"
-                period_info += f"• Обработано: {len(optimized_messages)} сообщений\n"
-                if period_hours < 24:
-                    period_info += f"• За период: {period_hours} часов\n"
-                else:
-                    period_days = period_hours // 24
-                    remaining_hours = period_hours % 24
-                    if remaining_hours > 0:
-                        period_info += f"• За период: {period_days} дней {remaining_hours} часов\n"
-                    else:
-                        period_info += f"• За период: {period_days} дней\n"
-                period_info += f"• С {period_start_time} по {period_end_time}\n"
+            # Вычисляем информацию о периоде
+            period_info, period_start_time, period_end_time, period_start_dt, period_end_dt = calculate_period_info(
+                messages_data, optimized_messages, period_start_date, label="анализа"
+            )
             
             # Публикуем статью в Telegraph
             article_title = f"Анализ чата: {chat_name} ({period_start_time})"
@@ -1278,55 +1295,10 @@ async def process_chat_command(event, use_ai=True):
                 period_start_date=period_start_date
             )
             
-            # Получаем время начала периода
-            period_start_time = ""
-            period_start_dt = None
-            if period_start_date:
-                try:
-                    period_start_dt = datetime.strptime(period_start_date, '%Y-%m-%d %H:%M:%S')
-                    period_start_time = period_start_dt.strftime('%d.%m %H:%M')
-                except (ValueError, TypeError):
-                    period_start_time = period_start_date[:16] if len(period_start_date) >= 16 else period_start_date
-            
-            if not period_start_time:
-                period_start_dt = datetime.now()
-                period_start_time = period_start_dt.strftime('%d.%m %H:%M')
-            
-            # Получаем дату последнего сообщения
-            period_end_dt = None
-            period_end_time = ""
-            if messages_data:
-                try:
-                    last_message = max(messages_data, key=lambda x: x.get('date', ''))
-                    last_date_str = last_message.get('date', '')
-                    if last_date_str:
-                        period_end_dt = datetime.strptime(last_date_str, '%Y-%m-%d %H:%M:%S')
-                        period_end_time = period_end_dt.strftime('%d.%m %H:%M')
-                except (ValueError, TypeError, KeyError):
-                    period_end_dt = datetime.now()
-                    period_end_time = period_end_dt.strftime('%d.%m %H:%M')
-            
-            # Вычисляем период в часах
-            period_hours = None
-            if period_start_dt and period_end_dt:
-                delta = period_end_dt - period_start_dt
-                period_hours = int(delta.total_seconds() / 3600)
-            
-            # Формируем информацию о периоде
-            period_info = ""
-            if period_hours is not None:
-                period_info = f"\n📅 **Период экспорта:**\n"
-                period_info += f"• Обработано: {len(optimized_messages)} сообщений\n"
-                if period_hours < 24:
-                    period_info += f"• За период: {period_hours} часов\n"
-                else:
-                    period_days = period_hours // 24
-                    remaining_hours = period_hours % 24
-                    if remaining_hours > 0:
-                        period_info += f"• За период: {period_days} дней {remaining_hours} часов\n"
-                    else:
-                        period_info += f"• За период: {period_days} дней\n"
-                period_info += f"• С {period_start_time} по {period_end_time}\n"
+            # Вычисляем информацию о периоде
+            period_info, period_start_time, period_end_time, period_start_dt, period_end_dt = calculate_period_info(
+                messages_data, optimized_messages, period_start_date, label="экспорта"
+            )
             
             # Создаем JSON строку
             json_export = json.dumps(export_data, ensure_ascii=False, indent=2)
