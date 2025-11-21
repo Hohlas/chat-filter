@@ -1201,10 +1201,26 @@ async def process_chat_command(event, use_ai=True):
             separator_count = summary.count('\n---\n')
             topics_count = separator_count + 1 if separator_count > 0 or summary.strip() else 0
             
-            # Формируем статистику для сообщения
-            stats_message = f"📊 **Анализ завершен**\n\n"
-            stats_message += f"📈 **Статистика:**\n"
-            stats_message += f"• Тем: {topics_count}\n"
+            # Вычисляем информацию о периоде (перед формированием статистики)
+            period_info, period_start_time, period_end_time, period_start_dt, period_end_dt = calculate_period_info(
+                messages_data, optimized_messages, period_start_date, label="анализа"
+            )
+            
+            # Вычисляем длительность для вывода
+            period_hours = None
+            period_text = ""
+            if period_start_dt and period_end_dt:
+                delta = period_end_dt - period_start_dt
+                period_hours = abs(int(delta.total_seconds() / 3600))
+                if period_hours < 24:
+                    period_text = f"{period_hours} часов"
+                else:
+                    period_days = period_hours // 24
+                    remaining_hours = period_hours % 24
+                    if remaining_hours > 0:
+                        period_text = f"{period_days} дней {remaining_hours} часов"
+                    else:
+                        period_text = f"{period_days} дней"
             
             # Добавляем информацию о токенах и стоимости
             prompt_tokens = None
@@ -1223,9 +1239,15 @@ async def process_chat_command(event, use_ai=True):
                 input_cost = (prompt_tokens / 1_000_000) * 3.0
                 output_cost = (completion_tokens / 1_000_000) * 15.0
                 total_cost = input_cost + output_cost
-                
-                stats_message += f"• Токенов: {total_tokens:,}\n"
-                stats_message += f"• Стоимость: ${total_cost:.4f}\n"
+            
+            # Формируем статистику в новом формате
+            stats_message = f"📊 Анализ завершен\n\n"
+            stats_message += f"• Обработано: {len(optimized_messages)} сообщений = {topics_count} Тем\n"
+            if period_text:
+                stats_message += f"• За период: {period_text}\n"
+                stats_message += f"• С {period_start_time} по {period_end_time}\n"
+            if usage_info and total_tokens:
+                stats_message += f"• Токенов: {total_tokens:,} = ${total_cost:.4f}\n"
             
             # Формируем полный контент для Telegraph (с статистикой в конце)
             full_content = summary
@@ -1237,18 +1259,12 @@ async def process_chat_command(event, use_ai=True):
                 full_content += f"• Всего: {total_tokens:,}\n"
                 full_content += f"💰 Стоимость: ${total_cost:.4f}\n"
             
-            # Вычисляем информацию о периоде
-            period_info, period_start_time, period_end_time, period_start_dt, period_end_dt = calculate_period_info(
-                messages_data, optimized_messages, period_start_date, label="анализа"
-            )
-            
             # Публикуем статью в Telegraph
             article_title = f"Анализ чата: {chat_name} ({period_start_time})"
             article_url = publish_to_telegraph(article_title, full_content, author_name="Chat Filter Bot")
             
             if article_url:
-                stats_message += period_info
-                stats_message += f"\n\n📰 **Статья в Telegraph:**\n{article_url}"
+                stats_message += f"\n📰 **Статья в Telegraph:**\n{article_url}"
                 # Удаляем временный файл анализа после успешной публикации
                 try:
                     if os.path.exists(analysis_filename):
@@ -1258,8 +1274,7 @@ async def process_chat_command(event, use_ai=True):
                     print(f"⚠️  Не удалось удалить файл {analysis_filename}: {e}")
             else:
                 # Если не удалось опубликовать в Telegraph, сохраняем в файл как запасной вариант
-                stats_message += period_info
-                stats_message += f"\n\n⚠️ Не удалось опубликовать в Telegraph. Сохраняю в файл..."
+                stats_message += f"\n⚠️ Не удалось опубликовать в Telegraph. Сохраняю в файл..."
                 filename = f"analysis_{chat_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
                 with open(filename, 'w', encoding='utf-8') as f:
                     f.write(full_content)
@@ -1308,20 +1323,36 @@ async def process_chat_command(event, use_ai=True):
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(json_export)
             
+            # Вычисляем длительность для caption
+            period_hours = None
+            period_text = ""
+            if period_start_dt and period_end_dt:
+                delta = period_end_dt - period_start_dt
+                period_hours = abs(int(delta.total_seconds() / 3600))
+                if period_hours < 24:
+                    period_text = f"{period_hours} часов"
+                else:
+                    period_days = period_hours // 24
+                    remaining_hours = period_hours % 24
+                    if remaining_hours > 0:
+                        period_text = f"{period_days} дней {remaining_hours} часов"
+                    else:
+                        period_text = f"{period_days} дней"
+            
+            # Формируем caption в новом формате
+            caption = f"📋 Экспорт завершен\n\n"
+            caption += f"• Обработано: {len(optimized_messages)} сообщений\n"
+            if period_text:
+                caption += f"• За период: {period_text}\n"
+                caption += f"• С {period_start_time} по {period_end_time}\n"
+            caption += f"\n💡 Готово для копирования в Perplexity!\n"
+            caption += f"📊 Формат: JSON v2.0 (s/t/r)"
+            
             # Отправляем файл
             await telegram_client.send_file(
                 RESULTS_DESTINATION,
                 filename,
-                caption=f"📋 **Экспорт сообщений**\n\n"
-                       f"Чат: {chat_name}\n"
-                       f"Всего: {len(messages_data)} сообщений\n"
-                       f"После фильтрации: {len(optimized_messages)} сообщений\n"
-                       f"{period_info}\n"
-                       f"💡 Готово для копирования в Perplexity!\n"
-                       f"📊 Формат: Оптимизированный JSON v2.0\n"
-                       f"   • Древовидная структура с replies\n"
-                       f"   • Без полей date и chat_id в сообщениях\n"
-                       f"   • Метаданные в metadata",
+                caption=caption,
                 reply_to=topic_id
             )
             
