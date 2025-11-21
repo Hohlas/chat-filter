@@ -475,8 +475,8 @@ async def collect_messages(chat_id, hours=None, days=None, limit=None):
         # Используем UTC для сравнения с message.date (Telegram API возвращает UTC)
         time_limit = datetime.now(timezone.utc) - timedelta(days=days, hours=hours)
         
-        async for message in telegram_client.iter_messages(chat_id):
-            # Прерываем, если достигли временного предела
+    async for message in telegram_client.iter_messages(chat_id):
+        # Прерываем, если достигли временного предела
             # Приводим message.date к UTC, если он не имеет timezone
             msg_date = message.date
             if msg_date.tzinfo is None:
@@ -904,8 +904,8 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
             # Пустая строка - завершаем текущий параграф
             if not line_stripped:
                 if current_paragraph:
-                    # Объединяем накопленные строки параграфа
-                    para_text = ' '.join(current_paragraph)
+                    # Объединяем накопленные строки параграфа с переносами
+                    para_text = '<br>'.join(current_paragraph)
                     # Конвертируем Markdown элементы
                     para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
                     para_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', para_text)
@@ -920,7 +920,7 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
             # Разделитель тем
             if line_stripped == '---':
                 if current_paragraph:
-                    para_text = ' '.join(current_paragraph)
+                    para_text = '<br>'.join(current_paragraph)
                     para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
                     para_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', para_text)
                     para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
@@ -935,7 +935,7 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
             # Заголовок темы (начинается с 💡)
             if line_stripped.startswith('💡'):
                 if current_paragraph:
-                    para_text = ' '.join(current_paragraph)
+                    para_text = '<br>'.join(current_paragraph)
                     para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
                     para_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', para_text)
                     para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
@@ -954,7 +954,7 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
             # Список
             if line_stripped.startswith('- ') or line_stripped.startswith('* '):
                 if current_paragraph:
-                    para_text = ' '.join(current_paragraph)
+                    para_text = '<br>'.join(current_paragraph)
                     para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
                     para_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', para_text)
                     para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
@@ -979,7 +979,7 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
         
         # Завершаем последний параграф
         if current_paragraph:
-            para_text = ' '.join(current_paragraph)
+            para_text = '<br>'.join(current_paragraph)
             para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
             para_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', para_text)
             para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
