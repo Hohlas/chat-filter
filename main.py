@@ -1351,13 +1351,14 @@ async def process_chat_command(event, use_ai=True):
             
             # Формируем полный контент для Telegraph (с статистикой в конце)
             full_content = summary
-            if usage_info and prompt_tokens is not None:
-                full_content += f"\n\n---\n\n"
-                full_content += f"📊 **Использовано токенов:**\n"
-                full_content += f"• Промпт: {prompt_tokens:,}\n"
-                full_content += f"• Ответ: {completion_tokens:,}\n"
-                full_content += f"• Всего: {total_tokens:,}\n"
-                full_content += f"💰 Стоимость: ${total_cost:.4f}\n"
+            # Закомментировано: статистика токенов в конце статьи Telegraph
+            # if usage_info and prompt_tokens is not None:
+            #     full_content += f"\n\n---\n\n"
+            #     full_content += f"📊 **Использовано токенов:**\n"
+            #     full_content += f"• Промпт: {prompt_tokens:,}\n"
+            #     full_content += f"• Ответ: {completion_tokens:,}\n"
+            #     full_content += f"• Всего: {total_tokens:,}\n"
+            #     full_content += f"💰 Стоимость: ${total_cost:.4f}\n"
             
             # Добавляем информацию о боте в конец статьи
             full_content += f"\n\n---\n\n"
