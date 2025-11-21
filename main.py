@@ -2,6 +2,7 @@ import os
 import asyncio
 import random
 import re
+import shutil
 from telethon import TelegramClient, events
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -9,6 +10,36 @@ import json
 from datetime import datetime, timedelta, timezone
 import httpx
 from telegraph import Telegraph
+
+
+def ensure_private_file():
+    """
+    Создает файл private.txt из шаблона private.txt.example, если он не существует.
+    """
+    private_file = 'private.txt'
+    template_file = 'private.txt.example'
+    
+    if os.path.exists(private_file):
+        return  # Файл уже существует, ничего не делаем
+    
+    if not os.path.exists(template_file):
+        print(f"⚠️  Файл {template_file} не найден!")
+        print(f"   Создайте файл {private_file} вручную с вашими API ключами.")
+        return
+    
+    try:
+        # Копируем шаблон в private.txt
+        shutil.copy2(template_file, private_file)
+        print(f"✅ Создан файл {private_file} из шаблона {template_file}")
+        print(f"⚠️  ВАЖНО: Отредактируйте {private_file} и укажите ваши реальные API ключи!")
+        print(f"   После этого перезапустите бота.")
+    except Exception as e:
+        print(f"❌ Ошибка при создании {private_file}: {e}")
+        print(f"   Создайте файл {private_file} вручную, скопировав {template_file}")
+
+
+# Создаем private.txt из шаблона, если его нет
+ensure_private_file()
 
 # Загрузка переменных окружения
 load_dotenv('private.txt')
