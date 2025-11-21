@@ -914,8 +914,8 @@ def calculate_period_info(messages_data, optimized_messages, period_start_date, 
     period_hours = None
     if period_start_dt and period_end_dt:
         delta = period_end_dt - period_start_dt
-        # Используем abs() для защиты от отрицательных значений при неправильном порядке дат
-        period_hours = abs(int(delta.total_seconds() / 3600))
+        # Используем round() для математического округления и abs() для защиты от отрицательных значений
+        period_hours = abs(round(delta.total_seconds() / 3600))
     
     # Формируем информацию о периоде
     period_info = ""
@@ -1211,7 +1211,7 @@ async def process_chat_command(event, use_ai=True):
             period_text = ""
             if period_start_dt and period_end_dt:
                 delta = period_end_dt - period_start_dt
-                period_hours = abs(int(delta.total_seconds() / 3600))
+                period_hours = abs(round(delta.total_seconds() / 3600))
                 if period_hours < 24:
                     period_text = f"{period_hours} часов"
                 else:
@@ -1328,7 +1328,7 @@ async def process_chat_command(event, use_ai=True):
             period_text = ""
             if period_start_dt and period_end_dt:
                 delta = period_end_dt - period_start_dt
-                period_hours = abs(int(delta.total_seconds() / 3600))
+                period_hours = abs(round(delta.total_seconds() / 3600))
                 if period_hours < 24:
                     period_text = f"{period_hours} часов"
                 else:
