@@ -849,7 +849,11 @@ async def create_summary(messages_data, chat_id_str, model='sonar', use_reasonin
 
 
 def save_analysis(messages_data, summary):
-    """Сохраняет результаты анализа в JSON файл"""
+    """Сохраняет результаты анализа в JSON файл
+    
+    Returns:
+        str: Имя созданного файла
+    """
     result = {
         'timestamp': datetime.now().isoformat(),
         'messages_count': len(messages_data),
@@ -862,6 +866,7 @@ def save_analysis(messages_data, summary):
         json.dump(result, f, ensure_ascii=False, indent=2)
     
     print(f"💾 Результаты сохранены в {filename}")
+    return filename
 
 
 def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
@@ -1121,7 +1126,7 @@ async def process_chat_command(event, use_ai=True):
                 )
                 return
             
-            save_analysis(optimized_messages, summary)
+            analysis_filename = save_analysis(optimized_messages, summary)
             
             # Подсчитываем количество тем (по разделителю "---")
             # Темы разделяются строкой "---" на отдельной строке
@@ -1227,6 +1232,13 @@ async def process_chat_command(event, use_ai=True):
             if article_url:
                 stats_message += period_info
                 stats_message += f"\n\n📰 **Статья в Telegraph:**\n{article_url}"
+                # Удаляем временный файл анализа после успешной публикации
+                try:
+                    if os.path.exists(analysis_filename):
+                        os.remove(analysis_filename)
+                        print(f"🗑️  Временный файл {analysis_filename} удален")
+                except Exception as e:
+                    print(f"⚠️  Не удалось удалить файл {analysis_filename}: {e}")
             else:
                 # Если не удалось опубликовать в Telegraph, сохраняем в файл как запасной вариант
                 stats_message += period_info
