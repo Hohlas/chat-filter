@@ -15,17 +15,18 @@ from telegraph import Telegraph
 def ensure_private_file():
     """
     Создает файл private.txt из шаблона private.txt.example, если он не существует.
+    Возвращает True, если файл был только что создан (нужна настройка).
     """
     private_file = 'private.txt'
     template_file = 'private.txt.example'
     
     if os.path.exists(private_file):
-        return  # Файл уже существует, ничего не делаем
+        return False  # Файл уже существует
     
     if not os.path.exists(template_file):
         print(f"⚠️  Файл {template_file} не найден!")
         print(f"   Создайте файл {private_file} вручную с вашими API ключами.")
-        return
+        return False
     
     try:
         # Копируем шаблон в private.txt
@@ -33,16 +34,84 @@ def ensure_private_file():
         print(f"✅ Создан файл {private_file} из шаблона {template_file}")
         print(f"⚠️  ВАЖНО: Отредактируйте {private_file} и укажите ваши реальные API ключи!")
         print(f"   После этого перезапустите бота.")
+        return True  # Файл был создан из шаблона
     except Exception as e:
         print(f"❌ Ошибка при создании {private_file}: {e}")
         print(f"   Создайте файл {private_file} вручную, скопировав {template_file}")
+        return False
+
+
+def validate_config():
+    """
+    Проверяет, что конфигурация заполнена реальными значениями, а не заглушками.
+    """
+    api_id = os.getenv('TELEGRAM_API_ID', '')
+    api_hash = os.getenv('TELEGRAM_API_HASH', '')
+    phone = os.getenv('TELEGRAM_PHONE', '')
+    perplexity_key = os.getenv('PERPLEXITY_API_KEY', '').strip()
+    
+    # Список заглушек, которые могут быть в шаблоне
+    placeholders = [
+        'ваш_api_id', 'ваш_api_hash', 'ваш_perplexity_ключ',
+        'your_api_id', 'your_api_hash', 'your_perplexity_key',
+        'ваш_telegram_api_id', 'ваш_telegram_api_hash'
+    ]
+    
+    errors = []
+    
+    # Проверка TELEGRAM_API_ID
+    if not api_id or api_id in placeholders:
+        errors.append("TELEGRAM_API_ID не заполнен или содержит заглушку")
+    else:
+        try:
+            int(api_id)  # Проверяем, что это число
+        except ValueError:
+            errors.append(f"TELEGRAM_API_ID должен быть числом, получено: {api_id}")
+    
+    # Проверка TELEGRAM_API_HASH
+    if not api_hash or api_hash in placeholders:
+        errors.append("TELEGRAM_API_HASH не заполнен или содержит заглушку")
+    
+    # Проверка TELEGRAM_PHONE
+    if not phone or phone in placeholders:
+        errors.append("TELEGRAM_PHONE не заполнен или содержит заглушку")
+    elif not phone.startswith('+'):
+        errors.append("TELEGRAM_PHONE должен начинаться с '+' (например, +79001234567)")
+    
+    # Проверка PERPLEXITY_API_KEY
+    if not perplexity_key or perplexity_key in placeholders:
+        errors.append("PERPLEXITY_API_KEY не заполнен или содержит заглушку")
+    
+    return errors
 
 
 # Создаем private.txt из шаблона, если его нет
-ensure_private_file()
+file_just_created = ensure_private_file()
 
 # Загрузка переменных окружения
 load_dotenv('private.txt')
+
+# Проверяем конфигурацию
+config_errors = validate_config()
+if config_errors:
+    if file_just_created:
+        print("\n" + "="*60)
+        print("📋 Файл private.txt создан из шаблона")
+        print("="*60)
+    else:
+        print("\n❌ Ошибки конфигурации в private.txt:")
+    
+    for error in config_errors:
+        print(f"   • {error}")
+    
+    print("\n📝 Инструкция:")
+    print("   1. Откройте файл private.txt")
+    print("   2. Замените все значения-заглушки на ваши реальные API ключи")
+    print("   3. Перезапустите бота")
+    print("\n💡 Где получить ключи:")
+    print("   • Telegram API: https://my.telegram.org/auth")
+    print("   • Perplexity API: https://www.perplexity.ai/settings/api")
+    exit(1)
 
 # Конфигурация Telegram
 API_ID = int(os.getenv('TELEGRAM_API_ID'))
