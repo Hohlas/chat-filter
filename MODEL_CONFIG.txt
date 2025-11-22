@@ -14,3 +14,8 @@ MODEL=sonar-pro
 # true или false
 USE_REASONING=false
 
+# Использовать HTML файлы вместо Telegraph
+# true - создавать локальные HTML файлы и отправлять в Telegram
+# false - публиковать на Telegraph (требует интернет-соединение)
+USE_HTML_EXPORT=true
+

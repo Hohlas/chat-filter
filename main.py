@@ -253,14 +253,15 @@ def load_model_config(filename):
         filename: Путь к файлу с конфигурацией модели
     
     Returns:
-        Кортеж (model_name, use_reasoning)
+        Кортеж (model_name, use_reasoning, use_html_export)
     """
     default_model = 'sonar-pro'  # Рекомендуемая модель для Perplexity API
     default_reasoning = False
+    default_html_export = True  # По умолчанию используем HTML
     
     if not os.path.exists(filename):
         print(f"⚠️  Файл {filename} не найден, используется модель по умолчанию: {default_model}")
-        return default_model, default_reasoning
+        return default_model, default_reasoning, default_html_export
     
     try:
         with open(filename, 'r', encoding='utf-8') as f:
@@ -268,6 +269,7 @@ def load_model_config(filename):
         
         model = default_model
         use_reasoning = default_reasoning
+        use_html_export = default_html_export
         
         for line in content.split('\n'):
             line = line.strip()
@@ -283,14 +285,16 @@ def load_model_config(filename):
                     model = value
                 elif key == 'USE_REASONING':
                     use_reasoning = value.lower() in ('true', 'yes', '1', 'on')
+                elif key == 'USE_HTML_EXPORT':
+                    use_html_export = value.lower() in ('true', 'yes', '1', 'on')
         
-        return model, use_reasoning
+        return model, use_reasoning, use_html_export
     except Exception as e:
         print(f"❌ Ошибка при чтении {filename}: {e}")
-        return default_model, default_reasoning
+        return default_model, default_reasoning, default_html_export
 
 
-def save_model_config(filename, model, use_reasoning):
+def save_model_config(filename, model, use_reasoning, use_html_export=True):
     """
     Сохраняет конфигурацию модели в файл
     
@@ -298,6 +302,7 @@ def save_model_config(filename, model, use_reasoning):
         filename: Путь к файлу
         model: Название модели
         use_reasoning: Использовать ли reasoning режим
+        use_html_export: Использовать ли HTML вместо Telegraph
     """
     try:
         with open(filename, 'w', encoding='utf-8') as f:
@@ -310,7 +315,11 @@ def save_model_config(filename, model, use_reasoning):
             f.write("# - sonar-pro (улучшенная версия с лучшим качеством) - РЕКОМЕНДУЕТСЯ\n\n")
             f.write(f"MODEL={model}\n\n")
             f.write("# Использовать ли режим reasoning (экспериментально)\n")
-            f.write(f"USE_REASONING={'true' if use_reasoning else 'false'}\n")
+            f.write(f"USE_REASONING={'true' if use_reasoning else 'false'}\n\n")
+            f.write("# Использовать HTML файлы вместо Telegraph\n")
+            f.write("# true - создавать локальные HTML файлы и отправлять в Telegram\n")
+            f.write("# false - публиковать на Telegraph (требует интернет-соединение)\n")
+            f.write(f"USE_HTML_EXPORT={'true' if use_html_export else 'false'}\n")
         return True
     except Exception as e:
         print(f"❌ Ошибка при сохранении {filename}: {e}")
@@ -321,7 +330,7 @@ def save_model_config(filename, model, use_reasoning):
 EXCLUDED_USERS = load_users_from_file(EXCLUDED_USERS_FILE)
 PRIORITY_USERS = load_users_from_file(PRIORITY_USERS_FILE)
 ANALYSIS_PROMPT = load_prompt_from_file(PROMPT_FILE)
-CURRENT_MODEL, USE_REASONING = load_model_config(MODEL_CONFIG_FILE)
+CURRENT_MODEL, USE_REASONING, USE_HTML_EXPORT = load_model_config(MODEL_CONFIG_FILE)
 
 # Инициализация клиентов
 telegram_client = TelegramClient('session_name', API_ID, API_HASH)
@@ -1179,6 +1188,261 @@ def publish_to_telegraph(title, content, author_name="Chat Filter Bot"):
         return None
 
 
+def create_html_report(title, content, author_name="Chat Filter Bot"):
+    """
+    Создает локальный HTML отчет со стилями в духе Telegraph
+    
+    Args:
+        title: Заголовок отчета
+        content: Содержимое отчета (Markdown текст)
+        author_name: Имя автора (опционально)
+    
+    Returns:
+        Путь к созданному HTML файлу или None при ошибке
+    """
+    try:
+        # Создаем папку для HTML отчетов, если её нет
+        reports_dir = 'html_reports'
+        if not os.path.exists(reports_dir):
+            os.makedirs(reports_dir)
+            print(f"📁 Создана папка {reports_dir}/")
+        
+        # Конвертируем Markdown в HTML (используем ту же логику что и для Telegraph)
+        lines = content.split('\n')
+        html_paragraphs = []
+        in_list = False
+        current_paragraph = []
+        
+        for line in lines:
+            line_stripped = line.strip()
+            
+            # Пустая строка - завершаем текущий параграф
+            if not line_stripped:
+                if current_paragraph:
+                    para_text = '<br>'.join(current_paragraph)
+                    para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+                    para_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', para_text)
+                    para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+                    html_paragraphs.append(f'<p>{para_text}</p>')
+                    current_paragraph = []
+                if in_list:
+                    html_paragraphs.append('</ul>')
+                    in_list = False
+                continue
+            
+            # Разделитель тем
+            if line_stripped == '---':
+                if current_paragraph:
+                    para_text = '<br>'.join(current_paragraph)
+                    para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+                    para_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', para_text)
+                    para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+                    html_paragraphs.append(f'<p>{para_text}</p>')
+                    current_paragraph = []
+                if in_list:
+                    html_paragraphs.append('</ul>')
+                    in_list = False
+                html_paragraphs.append('<hr>')
+                continue
+            
+            # Заголовок темы (начинается с 💡)
+            if line_stripped.startswith('💡'):
+                if current_paragraph:
+                    para_text = '<br>'.join(current_paragraph)
+                    para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+                    para_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', para_text)
+                    para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+                    html_paragraphs.append(f'<p>{para_text}</p>')
+                    current_paragraph = []
+                if in_list:
+                    html_paragraphs.append('</ul>')
+                    in_list = False
+                text = line_stripped
+                text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+                text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', text)
+                html_paragraphs.append(f'<h3>{text}</h3>')
+                continue
+            
+            # Пункт списка
+            if line_stripped.startswith('• '):
+                if current_paragraph:
+                    para_text = '<br>'.join(current_paragraph)
+                    para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+                    para_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', para_text)
+                    para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+                    html_paragraphs.append(f'<p>{para_text}</p>')
+                    current_paragraph = []
+                if not in_list:
+                    html_paragraphs.append('<ul>')
+                    in_list = True
+                text = line_stripped[2:]
+                text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+                text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', text)
+                text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', text)
+                html_paragraphs.append(f'<li>{text}</li>')
+                continue
+            
+            # Обычный текст - добавляем в текущий параграф
+            current_paragraph.append(line_stripped)
+        
+        # Завершаем оставшийся параграф
+        if current_paragraph:
+            para_text = '<br>'.join(current_paragraph)
+            para_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', para_text)
+            para_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', para_text)
+            para_text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', para_text)
+            html_paragraphs.append(f'<p>{para_text}</p>')
+        
+        if in_list:
+            html_paragraphs.append('</ul>')
+        
+        html_body = ''.join(html_paragraphs)
+        
+        # Создаем полноценный HTML документ со стилями в стиле Telegraph
+        html_template = f'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="author" content="{author_name}">
+    <title>{title}</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        body {{
+            font-family: 'Georgia', 'Times New Roman', serif;
+            font-size: 18px;
+            line-height: 1.6;
+            color: #222;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }}
+        
+        .container {{
+            max-width: 680px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 40px 50px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }}
+        
+        h1 {{
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            line-height: 1.3;
+        }}
+        
+        h3 {{
+            font-size: 22px;
+            font-weight: bold;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            line-height: 1.3;
+        }}
+        
+        p {{
+            margin-bottom: 15px;
+        }}
+        
+        a {{
+            color: #3390ec;
+            text-decoration: none;
+        }}
+        
+        a:hover {{
+            text-decoration: underline;
+        }}
+        
+        b, strong {{
+            font-weight: bold;
+        }}
+        
+        i, em {{
+            font-style: italic;
+        }}
+        
+        ul {{
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }}
+        
+        li {{
+            margin-bottom: 8px;
+        }}
+        
+        hr {{
+            border: none;
+            border-top: 1px solid #ddd;
+            margin: 30px 0;
+        }}
+        
+        .footer {{
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+            color: #888;
+            text-align: center;
+        }}
+        
+        @media (max-width: 768px) {{
+            body {{
+                padding: 10px;
+            }}
+            
+            .container {{
+                padding: 25px 20px;
+            }}
+            
+            h1 {{
+                font-size: 26px;
+            }}
+            
+            h3 {{
+                font-size: 20px;
+            }}
+            
+            body {{
+                font-size: 16px;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{title}</h1>
+        {html_body}
+        <div class="footer">
+            Создано {datetime.now().strftime('%d.%m.%Y %H:%M')}
+        </div>
+    </div>
+</body>
+</html>'''
+        
+        # Генерируем имя файла
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        safe_title = re.sub(r'[^\w\s-]', '', title).strip().replace(' ', '_')[:50]
+        filename = f"{reports_dir}/report_{safe_title}_{timestamp}.html"
+        
+        # Сохраняем файл
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_template)
+        
+        print(f"✅ HTML отчет создан: {filename}")
+        return filename
+        
+    except Exception as e:
+        print(f"❌ Ошибка при создании HTML отчета: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 async def process_chat_command(event, use_ai=True):
     """
     Универсальная функция обработки команд /sum и /copy
@@ -1365,42 +1629,74 @@ async def process_chat_command(event, use_ai=True):
             full_content += f"Создано ботом [Telegram Chat Summary](https://github.com/Hohlas/ChatSum) | Автор: [Hohla](https://t.me/hohlas)\n\n"
             full_content += f"💰 0x94f69c258cD251bcB77DBb6156DA13E32dCb8Ef4\n"
             
-            # Публикуем статью в Telegraph
             article_title = f"Анализ чата: {chat_name} ({period_start_time})"
-            article_url = publish_to_telegraph(article_title, full_content, author_name="Chat Filter Bot")
             
-            if article_url:
-                stats_message += f"\n📰 **Статья в Telegraph:**\n{article_url}"
-                # Удаляем временный файл анализа после успешной публикации
-                try:
-                    if os.path.exists(analysis_filename):
-                        os.remove(analysis_filename)
-                        print(f"🗑️  Временный файл {analysis_filename} удален")
-                except Exception as e:
-                    print(f"⚠️  Не удалось удалить файл {analysis_filename}: {e}")
-            else:
-                # Если не удалось опубликовать в Telegraph, сохраняем в файл как запасной вариант
-                stats_message += f"\n⚠️ Не удалось опубликовать в Telegraph. Сохраняю в файл..."
-                filename = f"analysis_{chat_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write(full_content)
+            # Выбираем способ экспорта на основе конфигурации
+            if USE_HTML_EXPORT:
+                # Создаем HTML отчет и отправляем файл
+                html_file = create_html_report(article_title, full_content, author_name="Chat Filter Bot")
                 
-                await telegram_client.send_file(
-                    RESULTS_DESTINATION,
-                    filename,
-                    caption=f"📄 **Полный анализ чата '{chat_name}'**\n\n"
-                           f"Тем: {topics_count}\n"
-                           f"Сообщений проанализировано: {len(optimized_messages)}",
+                if html_file:
+                    # Отправляем HTML файл как документ
+                    await telegram_client.send_file(
+                        RESULTS_DESTINATION,
+                        html_file,
+                        caption=stats_message,
+                        reply_to=topic_id
+                    )
+                    print(f"✅ HTML отчет отправлен в Telegram")
+                    
+                    # Удаляем временный файл анализа после успешной публикации
+                    try:
+                        if os.path.exists(analysis_filename):
+                            os.remove(analysis_filename)
+                            print(f"🗑️  Временный файл {analysis_filename} удален")
+                    except Exception as e:
+                        print(f"⚠️  Не удалось удалить файл {analysis_filename}: {e}")
+                else:
+                    # Если не удалось создать HTML, отправляем просто статистику
+                    stats_message += f"\n⚠️ Не удалось создать HTML отчет"
+                    await telegram_client.send_message(
+                        RESULTS_DESTINATION, 
+                        stats_message,
+                        reply_to=topic_id
+                    )
+            else:
+                # Используем Telegraph (старый способ)
+                article_url = publish_to_telegraph(article_title, full_content, author_name="Chat Filter Bot")
+                
+                if article_url:
+                    stats_message += f"\n📰 **Статья в Telegraph:**\n{article_url}"
+                    # Удаляем временный файл анализа после успешной публикации
+                    try:
+                        if os.path.exists(analysis_filename):
+                            os.remove(analysis_filename)
+                            print(f"🗑️  Временный файл {analysis_filename} удален")
+                    except Exception as e:
+                        print(f"⚠️  Не удалось удалить файл {analysis_filename}: {e}")
+                else:
+                    # Если не удалось опубликовать в Telegraph, сохраняем в файл как запасной вариант
+                    stats_message += f"\n⚠️ Не удалось опубликовать в Telegraph. Сохраняю в файл..."
+                    filename = f"analysis_{chat_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        f.write(full_content)
+                    
+                    await telegram_client.send_file(
+                        RESULTS_DESTINATION,
+                        filename,
+                        caption=f"📄 **Полный анализ чата '{chat_name}'**\n\n"
+                               f"Тем: {topics_count}\n"
+                               f"Сообщений проанализировано: {len(optimized_messages)}",
+                        reply_to=topic_id
+                    )
+                    os.remove(filename)
+                
+                # Отправляем статистику с ссылкой на статью
+                await telegram_client.send_message(
+                    RESULTS_DESTINATION, 
+                    stats_message,
                     reply_to=topic_id
                 )
-                os.remove(filename)
-            
-            # Отправляем статистику с ссылкой на статью
-            await telegram_client.send_message(
-                RESULTS_DESTINATION, 
-                stats_message,
-                reply_to=topic_id
-            )
             
             print("✅ Анализ с AI успешно завершён")
         
@@ -1486,12 +1782,14 @@ async def process_chat_command(event, use_ai=True):
 @telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/config'))
 async def handle_config_command(event):
     """Показывает текущую конфигурацию"""
+    export_mode = "HTML файлы 📄" if USE_HTML_EXPORT else "Telegraph 🌐"
     config_text = f"""
 ⚙️ **Текущая конфигурация бота**
 
 **🤖 Модель AI:**
 • Текущая модель: `{CURRENT_MODEL}`
 • Reasoning: {'Включен' if USE_REASONING else 'Выключен'}
+• Экспорт результатов: {export_mode}
 
 **📝 Исключенные пользователи** ({len(EXCLUDED_USERS)}):
 {', '.join(EXCLUDED_USERS) if EXCLUDED_USERS else 'Нет'}
@@ -1681,11 +1979,13 @@ async def handle_remove_priority_command(event):
 @telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/show_model'))
 async def handle_show_model_command(event):
     """Показывает текущую настройку модели"""
+    export_mode = "HTML файлы 📄" if USE_HTML_EXPORT else "Telegraph 🌐"
     text = f"""
 🤖 **Текущая модель для анализа**
 
 **Модель:** `{CURRENT_MODEL}`
 **Reasoning:** {'Включен ✅' if USE_REASONING else 'Выключен ❌'}
+**Экспорт результатов:** {export_mode}
 
 ⚠️ **ВАЖНО:** Через Perplexity API доступны ТОЛЬКО модели Sonar!
 Claude, GPT и другие модели доступны только в веб-интерфейсе Perplexity Pro.
@@ -1770,12 +2070,12 @@ async def handle_set_model_command(event):
 @telegram_client.on(events.NewMessage(outgoing=True, pattern=r'^/reload_config'))
 async def handle_reload_config_command(event):
     """Перезагружает конфигурацию из файлов"""
-    global EXCLUDED_USERS, PRIORITY_USERS, ANALYSIS_PROMPT, CURRENT_MODEL, USE_REASONING
+    global EXCLUDED_USERS, PRIORITY_USERS, ANALYSIS_PROMPT, CURRENT_MODEL, USE_REASONING, USE_HTML_EXPORT
     
     EXCLUDED_USERS = load_users_from_file(EXCLUDED_USERS_FILE)
     PRIORITY_USERS = load_users_from_file(PRIORITY_USERS_FILE)
     ANALYSIS_PROMPT = load_prompt_from_file(PROMPT_FILE)
-    CURRENT_MODEL, USE_REASONING = load_model_config(MODEL_CONFIG_FILE)
+    CURRENT_MODEL, USE_REASONING, USE_HTML_EXPORT = load_model_config(MODEL_CONFIG_FILE)
     
     text = f"""
 ✅ **Конфигурация перезагружена из файлов**

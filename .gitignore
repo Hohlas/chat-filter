@@ -212,3 +212,6 @@ private.txt
 
 # analysis results
 analysis_*.json
+
+# HTML reports
+html_reports/
