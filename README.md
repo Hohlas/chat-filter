@@ -300,3 +300,7 @@ screen -r telegram-chat-analyzer
 ## 📄 Лицензия
 
 MIT License. Подробности в файле [LICENSE](LICENSE).
+
+---
+
+💰 0x94f69c258cD251bcB77DBb6156DA13E32dCb8Ef4
