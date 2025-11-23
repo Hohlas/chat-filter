@@ -154,15 +154,13 @@ MODEL_CONFIG_FILE = 'MODEL_CONFIG.txt'
 def load_users_from_file(filename):
     """
     Загружает список пользователей из файла
-    
     Args:
         filename: Путь к файлу со списком пользователей
-    
     Returns:
         Список имен пользователей
     """
     if not os.path.exists(filename):
-        print(f"⚠️  Файл {filename} не найден, используется пустой список")
+        print(f"⚠️ Файл {filename} не найден, используется пустой список")
         return []
     
     try:
@@ -170,17 +168,23 @@ def load_users_from_file(filename):
             content = f.read()
         
         # Удаляем комментарии (строки начинающиеся с #)
-        lines = [line.strip() for line in content.split('\n') 
+        lines = [line.strip() for line in content.split('\n')
                  if line.strip() and not line.strip().startswith('#')]
         
-        # Объединяем все строки и разделяем по различным разделителям
+        # Обрабатываем каждую строку
         users = []
         for line in lines:
-            # Поддерживаем разделители: пробел, запятая, точка с запятой, перенос строки
-            parts = re.split(r'[,;\s]+', line)
-            users.extend([p.strip() for p in parts if p.strip()])
+            # ИСПРАВЛЕНИЕ: Разделяем только по запятой и точке с запятой
+            # НЕ разделяем по пробелам, чтобы сохранить составные имена
+            if ',' in line or ';' in line:
+                parts = re.split(r'[,;]+', line)
+                users.extend([p.strip() for p in parts if p.strip()])
+            else:
+                # Если нет разделителей - вся строка это одно имя
+                users.append(line.strip())
         
         return users
+        
     except Exception as e:
         print(f"❌ Ошибка при чтении {filename}: {e}")
         return []
